@@ -5,6 +5,11 @@ const api = axios.create({
   timeout: 120000, // 2 min for large audio files
 })
 
+const whisperApi = axios.create({
+  baseURL: '/whisper',
+  timeout: 60000,
+})
+
 export async function uploadMeeting({ audioBlob, meetingTitle, meetingStartTime, meetingEndTime, audioDuration }) {
   const form = new FormData()
 
@@ -27,5 +32,30 @@ export async function uploadMeeting({ audioBlob, meetingTitle, meetingStartTime,
       }
     },
   })
+  return res.data
+}
+
+export async function listSpeakers() {
+  const res = await whisperApi.get('/speakers')
+  return res.data
+}
+
+export async function enrollSpeaker({ name, audioBlob, device = 'auto' }) {
+  const form = new FormData()
+  const audioExt = audioBlob.type.includes('webm') ? 'webm'
+    : audioBlob.type.includes('ogg') ? 'ogg'
+    : audioBlob.type.includes('mp4') ? 'mp4'
+    : 'wav'
+  form.append('audio', audioBlob, `${name}_sample.${audioExt}`)
+  form.append('name', name)
+  form.append('device', device)
+  const res = await whisperApi.post('/speakers/enroll', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return res.data
+}
+
+export async function deleteSpeaker(name) {
+  const res = await whisperApi.delete(`/speakers/${encodeURIComponent(name)}`)
   return res.data
 }

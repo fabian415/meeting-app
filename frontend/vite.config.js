@@ -17,6 +17,11 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true,
       },
+      '/whisper': {
+        target: 'http://172.22.12.162:8787',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/whisper/, ''),
+      },
     },
   },
 })
