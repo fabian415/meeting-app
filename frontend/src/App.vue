@@ -1,8 +1,10 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useMeetingStore } from './stores/meeting.js'
 import RecordingScreen from './components/RecordingScreen.vue'
+import DirectUploadScreen from './components/DirectUploadScreen.vue'
 import UploadScreen from './components/UploadScreen.vue'
+import ConversationScreen from './components/ConversationScreen.vue'
 import SpeakerScreen from './components/SpeakerScreen.vue'
 import GlossaryScreen from './components/GlossaryScreen.vue'
 import Toast from './components/Toast.vue'
@@ -10,7 +12,7 @@ import Toast from './components/Toast.vue'
 const store = useMeetingStore()
 const toasts = ref([])
 const menuOpen = ref(false)
-const activePage = ref('meeting') // 'meeting' | 'speakers' | 'glossary'
+const activePage = ref('meeting')
 
 let toastId = 0
 
@@ -27,21 +29,48 @@ function navigate(page) {
   menuOpen.value = false
 }
 
+function openRecordingFlow() {
+  activePage.value = 'meeting'
+  menuOpen.value = false
+  if (store.currentView === 'file-select') {
+    store.reset()
+  }
+}
+
+function openDirectUploadFlow() {
+  store.reset()
+  store.currentView = 'file-select'
+  activePage.value = 'meeting'
+  menuOpen.value = false
+}
+
+const activeMenuPage = computed(() => {
+  if (activePage.value !== 'meeting') return activePage.value
+  return store.currentView === 'file-select' ? 'upload-audio' : 'meeting'
+})
+
 const currentComponent = computed(() => {
+  if (activePage.value === 'openclaw') return ConversationScreen
   if (activePage.value === 'speakers') return SpeakerScreen
   if (activePage.value === 'glossary') return GlossaryScreen
+  if (store.currentView === 'file-select') return DirectUploadScreen
   if (store.currentView === 'upload') return UploadScreen
   return RecordingScreen
 })
 
-const showStepIndicator = computed(() => activePage.value === 'meeting')
+const showStepIndicator = computed(() => activePage.value === 'meeting' && !['conversation', 'file-select'].includes(store.currentView))
+
+watch(() => store.currentView, (value) => {
+  if (value === 'conversation') {
+    activePage.value = 'openclaw'
+  }
+})
 </script>
 
 <template>
   <div class="min-h-screen min-h-dvh w-full relative overflow-hidden"
     style="background: linear-gradient(160deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);">
 
-    <!-- Background decorations -->
     <div class="absolute inset-0 overflow-hidden pointer-events-none">
       <div class="absolute -top-40 -right-40 w-96 h-96 rounded-full opacity-10"
         style="background: radial-gradient(circle, #6366f1, transparent)"></div>
@@ -49,7 +78,6 @@ const showStepIndicator = computed(() => activePage.value === 'meeting')
         style="background: radial-gradient(circle, #3b82f6, transparent)"></div>
     </div>
 
-    <!-- Step indicator (meeting page only) -->
     <div v-if="showStepIndicator" class="absolute top-4 left-0 right-0 flex justify-center gap-2 z-10">
       <div
         v-for="(step, i) in ['record', 'upload']"
@@ -62,7 +90,6 @@ const showStepIndicator = computed(() => activePage.value === 'meeting')
       ></div>
     </div>
 
-    <!-- Hamburger button -->
     <button
       @click="menuOpen = !menuOpen"
       class="absolute top-3 right-4 z-30 w-9 h-9 flex flex-col items-center justify-center gap-1.5 rounded-xl hover:bg-white/10 transition-colors"
@@ -76,7 +103,6 @@ const showStepIndicator = computed(() => activePage.value === 'meeting')
         :class="menuOpen ? '-rotate-45 -translate-y-2' : ''" />
     </button>
 
-    <!-- Menu overlay backdrop -->
     <Transition name="fade">
       <div
         v-if="menuOpen"
@@ -85,24 +111,34 @@ const showStepIndicator = computed(() => activePage.value === 'meeting')
       />
     </Transition>
 
-    <!-- Slide-in menu drawer -->
     <Transition name="slide-menu">
       <div
         v-if="menuOpen"
-        class="absolute top-0 right-0 z-30 h-full w-64 flex flex-col pt-14 pb-8 px-4"
+        class="absolute top-0 right-0 z-30 h-full w-72 flex flex-col pt-14 pb-8 px-4"
         style="background: linear-gradient(160deg, #0f172a 0%, #1e1b4b 100%);"
       >
-        <p class="text-white/30 text-xs uppercase tracking-widest mb-4 px-2">選單</p>
+        <p class="text-white/30 text-xs uppercase tracking-widest mb-4 px-2">Menu</p>
         <nav class="flex flex-col gap-1">
           <button
-            @click="navigate('meeting')"
+            @click="openRecordingFlow"
             class="flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-colors"
-            :class="activePage === 'meeting' ? 'bg-blue-500/20 text-blue-300' : 'text-white/70 hover:bg-white/10'"
+            :class="activeMenuPage === 'meeting' ? 'bg-blue-500/20 text-blue-300' : 'text-white/70 hover:bg-white/10'"
           >
             <span class="text-xl">🎙️</span>
             <div>
-              <p class="text-sm font-medium leading-tight">會議錄製</p>
-              <p class="text-xs opacity-50 mt-0.5">錄音並上傳伺服器</p>
+              <p class="text-sm font-medium leading-tight">會議錄音</p>
+              <p class="text-xs opacity-50 mt-0.5">錄音、上傳並交給 OpenClaw</p>
+            </div>
+          </button>
+          <button
+            @click="openDirectUploadFlow"
+            class="flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-colors"
+            :class="activeMenuPage === 'upload-audio' ? 'bg-blue-500/20 text-blue-300' : 'text-white/70 hover:bg-white/10'"
+          >
+            <span class="text-xl">📤</span>
+            <div>
+              <p class="text-sm font-medium leading-tight">上傳錄音檔</p>
+              <p class="text-xs opacity-50 mt-0.5">輸入會議名稱後直接上傳既有音檔</p>
             </div>
           </button>
           <button
@@ -110,10 +146,10 @@ const showStepIndicator = computed(() => activePage.value === 'meeting')
             class="flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-colors"
             :class="activePage === 'speakers' ? 'bg-blue-500/20 text-blue-300' : 'text-white/70 hover:bg-white/10'"
           >
-            <span class="text-xl">👥</span>
+            <span class="text-xl">🗣️</span>
             <div>
-              <p class="text-sm font-medium leading-tight">聲紋庫</p>
-              <p class="text-xs opacity-50 mt-0.5">管理 Speaker 聲紋</p>
+              <p class="text-sm font-medium leading-tight">Speaker 管理</p>
+              <p class="text-xs opacity-50 mt-0.5">維護聲紋樣本</p>
             </div>
           </button>
           <button
@@ -121,17 +157,27 @@ const showStepIndicator = computed(() => activePage.value === 'meeting')
             class="flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-colors"
             :class="activePage === 'glossary' ? 'bg-blue-500/20 text-blue-300' : 'text-white/70 hover:bg-white/10'"
           >
-            <span class="text-xl">📖</span>
+            <span class="text-xl">📚</span>
             <div>
               <p class="text-sm font-medium leading-tight">專有名詞</p>
-              <p class="text-xs opacity-50 mt-0.5">詞彙查詢與管理</p>
+              <p class="text-xs opacity-50 mt-0.5">維護辨識詞彙</p>
+            </div>
+          </button>
+          <button
+            @click="navigate('openclaw')"
+            class="flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-colors"
+            :class="activePage === 'openclaw' ? 'bg-blue-500/20 text-blue-300' : 'text-white/70 hover:bg-white/10'"
+          >
+            <span class="text-xl">💬</span>
+            <div>
+              <p class="text-sm font-medium leading-tight">OpenClaw 對話</p>
+              <p class="text-xs opacity-50 mt-0.5">直接查看目前對話訊息</p>
             </div>
           </button>
         </nav>
       </div>
     </Transition>
 
-    <!-- Main content -->
     <div class="relative z-10 max-w-md mx-auto h-screen h-dvh flex flex-col">
       <Transition name="view" mode="out-in">
         <component
@@ -143,7 +189,6 @@ const showStepIndicator = computed(() => activePage.value === 'meeting')
       </Transition>
     </div>
 
-    <!-- Toast notifications -->
     <Toast :toasts="toasts" />
   </div>
 </template>

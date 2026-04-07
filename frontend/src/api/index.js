@@ -2,7 +2,7 @@ import axios from 'axios'
 
 const api = axios.create({
   baseURL: '/api',
-  timeout: 120000, // 2 min for large audio files
+  timeout: 120000,
 })
 
 const whisperApi = axios.create({
@@ -10,15 +10,21 @@ const whisperApi = axios.create({
   timeout: 60000,
 })
 
-export async function uploadMeeting({ audioBlob, meetingTitle, meetingStartTime, meetingEndTime, audioDuration }) {
-  const form = new FormData()
+function getAudioFilename(audioBlob, fallbackName = '') {
+  if (fallbackName) return fallbackName
 
   const audioExt = audioBlob.type.includes('webm') ? 'webm'
     : audioBlob.type.includes('ogg') ? 'ogg'
     : audioBlob.type.includes('mp4') ? 'mp4'
     : 'wav'
 
-  form.append('audio', audioBlob, `recording.${audioExt}`)
+  return `recording.${audioExt}`
+}
+
+export async function uploadMeeting({ audioBlob, audioFileName, meetingTitle, meetingStartTime, meetingEndTime, audioDuration }) {
+  const form = new FormData()
+
+  form.append('audio', audioBlob, getAudioFilename(audioBlob, audioFileName))
   form.append('meetingTitle', meetingTitle || '未命名會議')
   form.append('meetingStartTime', meetingStartTime || '')
   form.append('meetingEndTime', meetingEndTime || '')
@@ -26,11 +32,22 @@ export async function uploadMeeting({ audioBlob, meetingTitle, meetingStartTime,
 
   const res = await api.post('/upload', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    onUploadProgress: (e) => {
-      if (e.total) {
-        return Math.round((e.loaded / e.total) * 100)
-      }
-    },
+  })
+  return res.data
+}
+
+export async function chatWithOpenClaw({ message, sessionId = null, context = {} }) {
+  const res = await api.post('/openclaw/chat', {
+    message,
+    sessionId,
+    context,
+  })
+  return res.data
+}
+
+export async function getOpenClawHistory(sessionId = null) {
+  const res = await api.get('/openclaw/history', {
+    params: sessionId ? { sessionId } : {},
   })
   return res.data
 }
@@ -62,20 +79,20 @@ export async function deleteSpeaker(name) {
 
 export async function listProperNouns() {
   const res = await whisperApi.get('/proper-nouns')
-  return res.data // { total, terms: string[] }
+  return res.data
 }
 
 export async function addProperNoun(term) {
   const res = await whisperApi.post('/proper-nouns', { term })
-  return res.data // { total, terms }
+  return res.data
 }
 
 export async function updateProperNoun(term, newTerm) {
   const res = await whisperApi.put(`/proper-nouns/${encodeURIComponent(term)}`, { new_term: newTerm })
-  return res.data // { total, terms }
+  return res.data
 }
 
 export async function deleteProperNoun(term) {
   const res = await whisperApi.delete(`/proper-nouns/${encodeURIComponent(term)}`)
-  return res.data // { total, terms }
+  return res.data
 }

@@ -9,6 +9,7 @@ const speakers = ref([])
 const loading = ref(false)
 const enrolling = ref(false)
 const deletingName = ref(null)
+const enrollCollapsed = ref(true)
 
 // Playback state
 const playingName = ref(null)   // name of speaker currently playing
@@ -84,6 +85,7 @@ async function handleEnroll() {
     audioFile.value = null
     audioDuration.value = null
     audioError.value = ''
+    enrollCollapsed.value = true
     if (fileInputRef.value) fileInputRef.value.value = ''
     await fetchSpeakers()
   } catch (e) {
@@ -171,60 +173,74 @@ onUnmounted(stopAudio)
 
     <!-- Enroll Form -->
     <div class="glass-card rounded-2xl p-4 mb-6">
-      <h2 class="text-base font-semibold text-white mb-4 flex items-center gap-2">
-        <span class="text-lg">🎙️</span> 新增 Speaker
-      </h2>
-
-      <!-- Name input -->
-      <div class="mb-3">
-        <label class="text-xs text-white/60 mb-1 block">Speaker 姓名</label>
-        <input
-          v-model="enrollName"
-          type="text"
-          placeholder="例如：Alice"
-          :disabled="enrolling"
-          class="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white text-sm placeholder-white/30 focus:outline-none focus:border-blue-400/60 transition-colors"
-        />
-      </div>
-
-      <!-- Audio file input -->
-      <div class="mb-3">
-        <label class="text-xs text-white/60 mb-1 block">聲紋音檔（{{ MIN_SEC }}–{{ MAX_SEC }} 秒）</label>
-        <label class="flex items-center gap-3 w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 cursor-pointer hover:border-blue-400/60 transition-colors"
-          :class="{ 'opacity-50 pointer-events-none': enrolling }">
-          <span class="text-blue-400 text-sm">📂</span>
-          <span class="text-sm truncate" :class="audioFile ? 'text-white' : 'text-white/30'">
-            {{ audioFile ? audioFile.name : '選擇音訊檔案…' }}
-          </span>
-          <input
-            ref="fileInputRef"
-            type="file"
-            accept="audio/*"
-            class="hidden"
-            @change="handleFileChange"
-          />
-        </label>
-
-        <!-- Duration info -->
-        <div v-if="audioDuration !== null && !audioError" class="mt-1 text-xs text-green-400">
-          時長：{{ audioDuration.toFixed(1) }} 秒 ✓
-        </div>
-        <div v-if="audioError" class="mt-1 text-xs text-red-400">
-          {{ audioError }}
-        </div>
-      </div>
-
       <button
-        @click="handleEnroll"
-        :disabled="enrolling || !!audioError"
-        class="btn-primary w-full rounded-xl py-2.5 text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        type="button"
+        class="flex w-full items-center justify-between rounded-xl px-1 py-1 text-left"
+        @click="enrollCollapsed = !enrollCollapsed"
       >
-        <svg v-if="enrolling" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-        </svg>
-        <span>{{ enrolling ? '註冊中…' : '註冊聲紋' }}</span>
+        <h2 class="text-base font-semibold text-white flex items-center gap-2">
+          <span class="text-lg">🎙️</span>
+          <span>新增 Speaker</span>
+        </h2>
+        <span
+          class="flex h-8 w-8 items-center justify-center rounded-full bg-white/8 text-white/70 transition-transform duration-200"
+          :class="enrollCollapsed ? '' : 'rotate-180'"
+        >
+          ˅
+        </span>
       </button>
+
+      <Transition name="collapse">
+        <div v-if="!enrollCollapsed" class="mt-4">
+          <div class="mb-3">
+            <label class="text-xs text-white/60 mb-1 block">Speaker 姓名</label>
+            <input
+              v-model="enrollName"
+              type="text"
+              placeholder="例如：Alice"
+              :disabled="enrolling"
+              class="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white text-sm placeholder-white/30 focus:outline-none focus:border-blue-400/60 transition-colors"
+            />
+          </div>
+
+          <div class="mb-3">
+            <label class="text-xs text-white/60 mb-1 block">聲紋音檔（{{ MIN_SEC }}–{{ MAX_SEC }} 秒）</label>
+            <label class="flex items-center gap-3 w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 cursor-pointer hover:border-blue-400/60 transition-colors"
+              :class="{ 'opacity-50 pointer-events-none': enrolling }">
+              <span class="text-blue-400 text-sm">📂</span>
+              <span class="text-sm truncate" :class="audioFile ? 'text-white' : 'text-white/30'">
+                {{ audioFile ? audioFile.name : '選擇音訊檔案…' }}
+              </span>
+              <input
+                ref="fileInputRef"
+                type="file"
+                accept="audio/*"
+                class="hidden"
+                @change="handleFileChange"
+              />
+            </label>
+
+            <div v-if="audioDuration !== null && !audioError" class="mt-1 text-xs text-green-400">
+              時長：{{ audioDuration.toFixed(1) }} 秒 ✓
+            </div>
+            <div v-if="audioError" class="mt-1 text-xs text-red-400">
+              {{ audioError }}
+            </div>
+          </div>
+
+          <button
+            @click="handleEnroll"
+            :disabled="enrolling || !!audioError"
+            class="btn-primary w-full rounded-xl py-2.5 text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg v-if="enrolling" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+            </svg>
+            <span>{{ enrolling ? '註冊中…' : '註冊聲紋' }}</span>
+          </button>
+        </div>
+      </Transition>
     </div>
 
     <!-- Speaker List -->
@@ -320,3 +336,25 @@ onUnmounted(stopAudio)
 
   </div>
 </template>
+
+<style scoped>
+.collapse-enter-active,
+.collapse-leave-active {
+  transition: all 0.22s ease;
+  overflow: hidden;
+}
+
+.collapse-enter-from,
+.collapse-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+  max-height: 0;
+}
+
+.collapse-enter-to,
+.collapse-leave-from {
+  opacity: 1;
+  transform: translateY(0);
+  max-height: 420px;
+}
+</style>
