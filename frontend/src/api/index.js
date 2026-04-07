@@ -59,3 +59,23 @@ export async function deleteSpeaker(name) {
   const res = await whisperApi.delete(`/speakers/${encodeURIComponent(name)}`)
   return res.data
 }
+
+export async function listProperNouns() {
+  const res = await whisperApi.get('/proper-nouns')
+  return res.data // { total, terms: string[] }
+}
+
+export async function addProperNoun(term) {
+  const res = await whisperApi.post('/proper-nouns', { term })
+  return res.data // { total, terms }
+}
+
+export async function updateProperNoun(term, newTerm) {
+  const res = await whisperApi.put(`/proper-nouns/${encodeURIComponent(term)}`, { new_term: newTerm })
+  return res.data // { total, terms }
+}
+
+export async function deleteProperNoun(term) {
+  const res = await whisperApi.delete(`/proper-nouns/${encodeURIComponent(term)}`)
+  return res.data // { total, terms }
+}

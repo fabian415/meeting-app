@@ -4,12 +4,13 @@ import { useMeetingStore } from './stores/meeting.js'
 import RecordingScreen from './components/RecordingScreen.vue'
 import UploadScreen from './components/UploadScreen.vue'
 import SpeakerScreen from './components/SpeakerScreen.vue'
+import GlossaryScreen from './components/GlossaryScreen.vue'
 import Toast from './components/Toast.vue'
 
 const store = useMeetingStore()
 const toasts = ref([])
 const menuOpen = ref(false)
-const activePage = ref('meeting') // 'meeting' | 'speakers'
+const activePage = ref('meeting') // 'meeting' | 'speakers' | 'glossary'
 
 let toastId = 0
 
@@ -28,6 +29,7 @@ function navigate(page) {
 
 const currentComponent = computed(() => {
   if (activePage.value === 'speakers') return SpeakerScreen
+  if (activePage.value === 'glossary') return GlossaryScreen
   if (store.currentView === 'upload') return UploadScreen
   return RecordingScreen
 })
@@ -114,6 +116,17 @@ const showStepIndicator = computed(() => activePage.value === 'meeting')
               <p class="text-xs opacity-50 mt-0.5">管理 Speaker 聲紋</p>
             </div>
           </button>
+          <button
+            @click="navigate('glossary')"
+            class="flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-colors"
+            :class="activePage === 'glossary' ? 'bg-blue-500/20 text-blue-300' : 'text-white/70 hover:bg-white/10'"
+          >
+            <span class="text-xl">📖</span>
+            <div>
+              <p class="text-sm font-medium leading-tight">專有名詞</p>
+              <p class="text-xs opacity-50 mt-0.5">詞彙查詢與管理</p>
+            </div>
+          </button>
         </nav>
       </div>
     </Transition>
@@ -123,7 +136,7 @@ const showStepIndicator = computed(() => activePage.value === 'meeting')
       <Transition name="view" mode="out-in">
         <component
           :is="currentComponent"
-          :key="activePage === 'speakers' ? 'speakers' : store.currentView"
+          :key="activePage === 'meeting' ? store.currentView : activePage"
           class="flex-1 flex flex-col"
           @toast="showToast"
         />
