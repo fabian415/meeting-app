@@ -75,114 +75,101 @@ function formatBytes(bytes) {
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
-    <div class="flex items-center gap-3 pt-8 pb-6 px-6">
+  <div class="flex h-full flex-col lg:px-8 lg:py-8">
+    <div class="flex items-center gap-3 px-6 pb-6 pt-8 lg:px-0 lg:pb-8 lg:pt-4">
       <button
         v-if="status !== 'uploading'"
-        class="w-10 h-10 rounded-full flex items-center justify-center glass-card text-slate-300 active:scale-95 transition-transform flex-shrink-0"
+        class="glass-card flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-300 transition-transform active:scale-95"
         @click="goBack"
       >
         ←
       </button>
       <div>
         <h1 class="text-xl font-bold text-white">
-          {{ status === 'uploading' ? '上傳中...' : status === 'success' ? '上傳成功' : '上傳失敗' }}
+          {{ status === 'uploading' ? '上傳中' : status === 'success' ? '上傳完成' : '上傳失敗' }}
         </h1>
-        <p v-if="store.meetingTitle" class="text-slate-400 text-xs mt-0.5">{{ store.meetingTitle }}</p>
+        <p v-if="store.meetingTitle" class="mt-0.5 text-xs text-slate-400">{{ store.meetingTitle }}</p>
       </div>
     </div>
 
-    <div class="flex-1 flex flex-col items-center justify-center px-6 gap-6">
+    <div class="flex-1 px-6 pb-8 lg:min-h-0 lg:px-0 lg:pb-0">
       <template v-if="status === 'uploading'">
-        <div class="flex flex-col items-center gap-6 w-full fade-in">
-          <div class="relative w-28 h-28">
-            <div class="w-28 h-28 rounded-full border-4 border-white/10"></div>
+        <div class="fade-in flex h-full flex-col items-center justify-center gap-6 lg:grid lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)] lg:gap-8">
+          <div class="relative h-28 w-28 lg:h-36 lg:w-36">
+            <div class="h-28 w-28 rounded-full border-4 border-white/10 lg:h-36 lg:w-36"></div>
             <div class="absolute inset-0 rounded-full border-4 border-transparent border-t-blue-500 animate-spin-slow"></div>
             <div class="absolute inset-0 flex items-center justify-center">
               <span class="text-4xl">↑</span>
             </div>
           </div>
 
-          <div class="w-full glass-card p-4">
-            <div class="flex justify-between text-sm mb-2">
-              <span class="text-slate-300">正在上傳音檔並準備 OpenClaw 訊息...</span>
-              <span class="text-blue-400 font-mono">{{ Math.round(progress) }}%</span>
-            </div>
-            <div class="w-full bg-white/10 rounded-full h-2.5 overflow-hidden">
-              <div
-                class="h-full rounded-full transition-all duration-300"
-                style="background: linear-gradient(90deg, #3b82f6, #6366f1)"
-                :style="{ width: progress + '%' }"
-              ></div>
-            </div>
-          </div>
-
-          <div class="w-full glass-card p-4 flex flex-col gap-3">
-            <div class="flex items-center gap-3">
-              <span class="text-2xl">🎙️</span>
-              <div>
-                <p class="text-white text-sm font-medium">錄音檔案</p>
-                <p class="text-slate-400 text-xs">{{ store.audioFileName || formatBytes(store.audioBlob?.size) }}</p>
+          <div class="w-full max-w-3xl space-y-4">
+            <div class="glass-card p-4 lg:p-5">
+              <div class="mb-2 flex justify-between text-sm">
+                <span class="text-slate-300">正在上傳並建立 OpenClaw 對話內容...</span>
+                <span class="font-mono text-blue-400">{{ Math.round(progress) }}%</span>
               </div>
+              <div class="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
+                <div class="h-full rounded-full transition-all duration-300" style="background: linear-gradient(90deg, #3b82f6, #6366f1)" :style="{ width: progress + '%' }"></div>
+              </div>
+            </div>
+
+            <div class="glass-card p-4 lg:p-5">
+              <p class="text-sm font-medium text-white">目前檔案</p>
+              <p class="mt-2 text-sm text-slate-300">{{ store.audioFileName || formatBytes(store.audioBlob?.size) }}</p>
             </div>
           </div>
         </div>
       </template>
 
       <template v-else-if="status === 'success'">
-        <div class="flex flex-col items-center gap-6 w-full fade-in">
-          <div class="w-28 h-28 rounded-full bg-emerald-500/20 border-2 border-emerald-500/50 flex items-center justify-center">
+        <div class="fade-in flex h-full flex-col items-center justify-center gap-6 lg:mx-auto lg:max-w-4xl">
+          <div class="flex h-28 w-28 items-center justify-center rounded-full border-2 border-emerald-500/50 bg-emerald-500/20">
             <span class="text-5xl">✓</span>
           </div>
 
           <div class="text-center">
-            <h2 class="text-white text-xl font-bold">上傳完成</h2>
-            <p class="text-slate-400 text-sm mt-1">已準備切換到 OpenClaw 對話頁。</p>
+            <h2 class="text-xl font-bold text-white">上傳完成</h2>
+            <p class="mt-1 text-sm text-slate-400">系統已建立好 OpenClaw 對話草稿。</p>
           </div>
 
-          <div class="w-full glass-card p-4 flex flex-col gap-3">
-            <p class="text-slate-300 text-sm font-medium mb-1">已上傳檔案</p>
-            <div
-              v-for="file in uploadedFiles"
-              :key="file.name"
-              class="flex items-center gap-3 py-2 border-t border-white/5"
-            >
-              <span class="text-emerald-400 text-lg">✓</span>
+          <div class="glass-card flex w-full flex-col gap-3 p-4 lg:p-5">
+            <p class="mb-1 text-sm font-medium text-slate-300">已處理檔案</p>
+            <div v-for="file in uploadedFiles" :key="file.name" class="flex items-center gap-3 border-t border-white/5 py-2">
+              <span class="text-lg text-emerald-400">✓</span>
               <div class="min-w-0">
-                <p class="text-white text-sm font-mono truncate">{{ file.name }}</p>
-                <p class="text-slate-500 text-xs">{{ formatBytes(file.size) }}</p>
+                <p class="truncate text-sm font-mono text-white">{{ file.name }}</p>
+                <p class="text-xs text-slate-500">{{ formatBytes(file.size) }}</p>
               </div>
             </div>
           </div>
 
-          <button class="btn-primary" @click="startOver">重新開始錄音</button>
+          <button class="btn-primary lg:min-w-60" @click="startOver">重新開始</button>
         </div>
       </template>
 
       <template v-else>
-        <div class="flex flex-col items-center gap-6 w-full fade-in">
-          <div class="w-28 h-28 rounded-full bg-red-500/20 border-2 border-red-500/50 flex items-center justify-center">
+        <div class="fade-in flex h-full flex-col items-center justify-center gap-6 lg:mx-auto lg:max-w-4xl">
+          <div class="flex h-28 w-28 items-center justify-center rounded-full border-2 border-red-500/50 bg-red-500/20">
             <span class="text-5xl">!</span>
           </div>
 
           <div class="text-center">
-            <h2 class="text-white text-xl font-bold">上傳失敗</h2>
-            <p class="text-slate-400 text-sm mt-1">請檢查後重新嘗試。</p>
+            <h2 class="text-xl font-bold text-white">上傳失敗</h2>
+            <p class="mt-1 text-sm text-slate-400">請確認檔案與服務狀態後再重試。</p>
           </div>
 
-          <div class="w-full glass-card p-4 border-red-500/30">
-            <p class="text-red-300 text-sm font-medium mb-1">錯誤訊息</p>
-            <p class="text-red-200 text-sm font-mono leading-relaxed">{{ errorMessage }}</p>
+          <div class="glass-card w-full border-red-500/30 p-4">
+            <p class="mb-1 text-sm font-medium text-red-300">錯誤訊息</p>
+            <p class="text-sm leading-relaxed text-red-200">{{ errorMessage }}</p>
           </div>
 
-          <div class="flex flex-col gap-3 w-full">
+          <div class="flex w-full flex-col gap-3 lg:flex-row">
             <button class="btn-primary" @click="doUpload">重新上傳</button>
-            <button class="btn-primary btn-secondary" @click="startOver">重新開始錄音</button>
+            <button class="btn-primary btn-secondary" @click="startOver">重新開始</button>
           </div>
         </div>
       </template>
     </div>
-
-    <div class="h-8"></div>
   </div>
 </template>

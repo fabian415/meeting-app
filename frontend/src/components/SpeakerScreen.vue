@@ -163,7 +163,7 @@ onUnmounted(stopAudio)
 </script>
 
 <template>
-  <div class="flex-1 flex flex-col px-4 pt-14 pb-6 overflow-y-auto">
+  <div class="flex-1 flex flex-col overflow-y-auto px-4 pt-14 pb-6 sm:px-6 lg:px-8 lg:pt-20 lg:pb-8">
 
     <!-- Header -->
     <div class="mb-6">
@@ -172,7 +172,8 @@ onUnmounted(stopAudio)
     </div>
 
     <!-- Enroll Form -->
-    <div class="glass-card rounded-2xl p-4 mb-6">
+    <div class="grid gap-6 lg:grid-cols-[minmax(20rem,0.95fr)_minmax(0,1.05fr)] lg:items-start">
+      <div class="glass-card rounded-2xl p-4 lg:sticky lg:top-4 lg:p-5">
       <button
         type="button"
         class="flex w-full items-center justify-between rounded-xl px-1 py-1 text-left"
@@ -244,7 +245,7 @@ onUnmounted(stopAudio)
     </div>
 
     <!-- Speaker List -->
-    <div class="glass-card rounded-2xl p-4">
+      <div class="glass-card rounded-2xl p-4 lg:min-h-[34rem] lg:p-5">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-base font-semibold text-white flex items-center gap-2">
           <span class="text-lg">👥</span> 已註冊 Speaker
@@ -271,7 +272,7 @@ onUnmounted(stopAudio)
       </div>
 
       <!-- Speaker items -->
-      <ul v-else class="space-y-2 overflow-y-auto max-h-64">
+      <ul v-else class="space-y-2 overflow-y-auto max-h-[28rem] lg:max-h-[40rem]">
         <li
           v-for="sp in speakers"
           :key="sp.name"
@@ -332,6 +333,7 @@ onUnmounted(stopAudio)
           </button>
         </li>
       </ul>
+      </div>
     </div>
 
   </div>

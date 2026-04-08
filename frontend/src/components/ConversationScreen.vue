@@ -15,6 +15,7 @@ const lastSignature = ref('')
 const scrollViewport = ref(null)
 const highlightedMessageId = ref('')
 const expandedThoughtGroups = ref({})
+const composerOffset = ref(0)
 
 const hasPendingAssistantReply = computed(() => {
   const messages = store.conversationMessages
@@ -192,6 +193,17 @@ function flashLatestAssistant(messages, previousMessages) {
   }, 2600)
 }
 
+function updateComposerOffset() {
+  if (typeof window === 'undefined' || !window.visualViewport) {
+    composerOffset.value = 0
+    return
+  }
+
+  const viewport = window.visualViewport
+  const keyboardInset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
+  composerOffset.value = keyboardInset > 0 ? keyboardInset : 0
+}
+
 async function applyMessages(nextMessages, { smoothScroll = true } = {}) {
   const nextVisibleMessages = visibleMessages(nextMessages)
   const previousMessages = store.conversationMessages
@@ -298,9 +310,15 @@ onMounted(async () => {
 
   await nextTick()
   scrollToLatest({ smooth: false })
+  updateComposerOffset()
 
   await refreshHistory()
   updatePolling()
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', updateComposerOffset)
+    window.visualViewport.addEventListener('scroll', updateComposerOffset)
+  }
 })
 
 watch(draft, (value) => {
@@ -312,20 +330,17 @@ onUnmounted(() => {
   if (highlightHandle.value) {
     window.clearTimeout(highlightHandle.value)
   }
+  if (window.visualViewport) {
+    window.visualViewport.removeEventListener('resize', updateComposerOffset)
+    window.visualViewport.removeEventListener('scroll', updateComposerOffset)
+  }
 })
 </script>
 
 <template>
-  <div class="flex h-full flex-col pt-14">
-    <!-- <div class="flex items-center justify-between px-4 pb-3">
-      <div class="min-w-0 pr-4">
-        <p class="text-white text-lg font-semibold">OpenClaw 對話</p>
-        <p class="text-slate-400 text-xs truncate">{{ store.conversationContext?.audioPath || '尚未提供音檔位置' }}</p>
-      </div>
-    </div> -->
-
-    <div class="flex-1 min-h-0 px-3 pb-40">
-      <div ref="scrollViewport" class="h-full overflow-y-auto border border-white/10 bg-slate-950/35 px-3 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-md space-y-3 scroll-smooth">
+  <div class="flex h-full flex-col pt-14 lg:px-6 lg:pt-20">
+    <div class="flex-1 min-h-0 px-3 pb-48 sm:px-4 sm:pb-52 lg:px-0 lg:pb-56" :style="{ paddingBottom: `calc(${composerOffset}px + 12rem)` }">
+      <div ref="scrollViewport" class="mx-auto h-full max-w-5xl space-y-3 overflow-y-auto rounded-[1.75rem] border border-white/10 bg-slate-950/35 px-3 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-md scroll-smooth sm:px-5 lg:px-6 lg:py-6">
         <div
           v-for="(item, index) in conversationItems"
           :key="item.key || index"
@@ -334,7 +349,7 @@ onUnmounted(() => {
         >
           <template v-if="item.kind === 'message'">
             <div
-              class="max-w-[88%] rounded-3xl px-4 py-3 text-[15px] leading-7 whitespace-pre-wrap break-all shadow-sm transition-all duration-500"
+              class="max-w-[92%] rounded-3xl px-4 py-3 text-[15px] leading-7 whitespace-pre-wrap break-all shadow-sm transition-all duration-500 sm:max-w-[82%] lg:max-w-[75%]"
               :class="[
                 item.message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-white/10 text-slate-100',
                 highlightedMessageId === (item.message.id || `${item.message.role}:${item.message.content}`) ? 'ring-2 ring-cyan-300/70 bg-cyan-400/15 shadow-[0_0_0_1px_rgba(103,232,249,0.35)]' : ''
@@ -345,7 +360,7 @@ onUnmounted(() => {
           </template>
           <div
             v-else
-            class="max-w-[88%] overflow-hidden rounded-3xl border shadow-sm"
+            class="max-w-[92%] overflow-hidden rounded-3xl border shadow-sm sm:max-w-[82%] lg:max-w-[75%]"
             :class="getGroupClasses(item).wrapper"
           >
             <button
@@ -354,10 +369,7 @@ onUnmounted(() => {
               @click="toggleThoughtGroup(item)"
             >
               <div class="flex items-center gap-3">
-                <span
-                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-semibold"
-                  :class="getGroupClasses(item).badge"
-                >
+                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-semibold" :class="getGroupClasses(item).badge">
                   {{ getGroupIcon(item) }}
                 </span>
                 <div>
@@ -368,11 +380,7 @@ onUnmounted(() => {
               <span class="text-xs" :class="getGroupClasses(item).action">{{ isThoughtGroupExpanded(item) ? '收起' : '展開' }}</span>
             </button>
 
-            <div
-              v-if="isThoughtGroupExpanded(item)"
-              class="space-y-2 border-t px-3 py-3"
-              :class="getGroupClasses(item).divider"
-            >
+            <div v-if="isThoughtGroupExpanded(item)" class="space-y-2 border-t px-3 py-3" :class="getGroupClasses(item).divider">
               <div
                 v-for="(thoughtMessage, thoughtIndex) in item.messages"
                 :key="thoughtMessage.id || `${item.key}-${thoughtIndex}`"
@@ -386,21 +394,27 @@ onUnmounted(() => {
         </div>
 
         <div v-if="!store.conversationMessages.length" class="flex justify-start">
-          <div class="max-w-[88%] rounded-3xl px-4 py-3 text-sm leading-6 bg-white/5 text-slate-400 border border-white/8">
+          <div class="max-w-[92%] rounded-3xl border border-white/8 bg-white/5 px-4 py-3 text-sm leading-6 text-slate-400 sm:max-w-[82%] lg:max-w-[75%]">
             音檔已上傳完成，請先確認下方草稿內容，再自行送出給 OpenClaw。
           </div>
         </div>
 
         <div v-else-if="hasPendingAssistantReply" class="flex justify-start">
-          <div class="max-w-[88%] rounded-3xl px-4 py-3 text-sm leading-6 bg-white/5 text-slate-400 border border-white/8">
+          <div class="max-w-[92%] rounded-3xl border border-white/8 bg-white/5 px-4 py-3 text-sm leading-6 text-slate-400 sm:max-w-[82%] lg:max-w-[75%]">
             OpenClaw 處理中，正在等待新的回覆...
           </div>
         </div>
       </div>
     </div>
 
-    <div class="absolute inset-x-0 bottom-0 z-10 px-3 pb-3 pt-4" style="background: linear-gradient(180deg, rgba(15,23,42,0) 0%, rgba(15,23,42,0.92) 28%, rgba(15,23,42,0.98) 100%);">
-      <div class="mx-auto max-w-md border border-white/10 bg-slate-950/75 px-3 py-2.5 shadow-2xl backdrop-blur-xl">
+    <div
+      class="absolute inset-x-0 bottom-0 z-10 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] pt-4 sm:px-4 lg:px-6 lg:pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]"
+      :style="{
+        background: 'linear-gradient(180deg, rgba(15,23,42,0) 0%, rgba(15,23,42,0.92) 28%, rgba(15,23,42,0.98) 100%)',
+        transform: composerOffset ? `translateY(-${composerOffset}px)` : 'translateY(0)',
+      }"
+    >
+      <div class="mx-auto max-w-5xl rounded-[1.5rem] border border-white/10 bg-slate-950/75 px-3 py-2.5 shadow-2xl backdrop-blur-xl sm:px-4 sm:py-3 lg:px-5">
         <div class="mb-1.5 flex items-center justify-between px-1 text-[11px] text-slate-400">
           <span>{{ store.conversationContext?.skill || 'meeting-transcription' }}</span>
           <button class="text-slate-300 transition-colors hover:text-white" :disabled="loadingHistory" @click="refreshHistory">
@@ -410,12 +424,12 @@ onUnmounted(() => {
         <textarea
           v-model="draft"
           rows="2"
-          class="w-full bg-transparent text-white resize-none outline-none placeholder:text-slate-500 text-[15px] leading-6 min-h-[52px] max-h-28"
+          class="min-h-[52px] max-h-32 w-full resize-none bg-transparent text-[15px] leading-6 text-white outline-none placeholder:text-slate-500"
           placeholder="輸入你想補充給 OpenClaw 的內容..."
           @keydown.enter.exact.prevent="sendMessage"
         ></textarea>
         <div class="mt-2 flex justify-end">
-          <button class="btn-primary" :disabled="sending || !draft.trim()" @click="sendMessage">
+          <button class="btn-primary btn-block sm:w-auto sm:min-w-36" :disabled="sending || !draft.trim()" @click="sendMessage">
             {{ sending ? '傳送中...' : '送出訊息' }}
           </button>
         </div>

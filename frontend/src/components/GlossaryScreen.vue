@@ -123,10 +123,10 @@ onMounted(fetchTerms)
 </script>
 
 <template>
-  <div class="flex-1 flex flex-col overflow-hidden">
+  <div class="flex-1 flex flex-col overflow-hidden lg:px-8 lg:py-8">
 
     <!-- Fixed top area -->
-    <div class="px-4 pt-14 pb-3 shrink-0">
+    <div class="shrink-0 px-4 pt-14 pb-3 sm:px-6 lg:px-0 lg:pt-4 lg:pb-6 lg:max-w-5xl">
       <!-- Header row -->
       <div class="flex items-center justify-between mb-4">
         <div>
@@ -196,7 +196,7 @@ onMounted(fetchTerms)
     </div>
 
     <!-- Scrollable list -->
-    <div class="flex-1 overflow-y-auto px-4 pb-6">
+    <div class="flex-1 overflow-y-auto px-4 pb-6 sm:px-6 lg:px-0 lg:max-w-6xl">
 
       <!-- Loading -->
       <div v-if="loading && terms.length === 0" class="flex justify-center py-10">
@@ -216,7 +216,7 @@ onMounted(fetchTerms)
         找不到符合的詞彙
       </div>
 
-      <ul v-else class="space-y-2">
+      <ul v-else class="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
         <li
           v-for="term in filtered"
           :key="term"

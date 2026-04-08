@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 defineProps({
   toasts: {
     type: Array,
@@ -8,12 +8,12 @@ defineProps({
 </script>
 
 <template>
-  <div class="fixed top-4 left-0 right-0 z-50 flex flex-col gap-2 px-4 pointer-events-none">
+  <div class="pointer-events-none fixed left-0 right-0 top-4 z-50 flex flex-col gap-2 px-4">
     <TransitionGroup name="toast">
       <div
         v-for="toast in toasts"
         :key="toast.id"
-        class="w-full max-w-sm mx-auto pointer-events-auto rounded-2xl px-4 py-3 flex items-center gap-3 shadow-2xl"
+        class="pointer-events-auto mx-auto flex w-full max-w-sm items-center gap-3 rounded-2xl px-4 py-3 shadow-2xl"
         :class="{
           'bg-emerald-500': toast.type === 'success',
           'bg-red-500': toast.type === 'error',
@@ -21,10 +21,10 @@ defineProps({
           'bg-amber-500': toast.type === 'warning',
         }"
       >
-        <span class="text-xl flex-shrink-0">
-          {{ toast.type === 'success' ? '✅' : toast.type === 'error' ? '❌' : toast.type === 'warning' ? '⚠️' : 'ℹ️' }}
+        <span class="shrink-0 text-xl">
+          {{ toast.type === 'success' ? '✓' : toast.type === 'error' ? '!' : toast.type === 'warning' ? '⚠' : 'i' }}
         </span>
-        <p class="text-white text-sm font-medium leading-snug">{{ toast.message }}</p>
+        <p class="text-sm font-medium leading-snug text-white">{{ toast.message }}</p>
       </div>
     </TransitionGroup>
   </div>

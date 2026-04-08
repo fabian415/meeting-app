@@ -1,5 +1,5 @@
-<script setup>
-import { ref, onUnmounted, computed } from 'vue'
+﻿<script setup>
+import { computed, onUnmounted, ref } from 'vue'
 import { useMeetingStore } from '../stores/meeting.js'
 
 const emit = defineEmits(['toast'])
@@ -10,6 +10,7 @@ const isPaused = ref(false)
 const hasRecording = ref(false)
 const elapsedSeconds = ref(0)
 const audioLevel = ref(0)
+const waveHeights = ref(Array(9).fill(8))
 
 let mediaRecorder = null
 let audioChunks = []
@@ -17,7 +18,6 @@ let timerInterval = null
 let analyserNode = null
 let animationFrame = null
 let audioContext = null
-let recordingStartTime = 0
 
 const formattedTime = computed(() => {
   const h = Math.floor(elapsedSeconds.value / 3600)
@@ -27,14 +27,12 @@ const formattedTime = computed(() => {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 })
 
-const waveHeights = ref(Array(9).fill(8))
-
 function updateWaveform() {
   if (!analyserNode) return
   const data = new Uint8Array(analyserNode.frequencyBinCount)
   analyserNode.getByteFrequencyData(data)
 
-  const step = Math.floor(data.length / 9)
+  const step = Math.max(1, Math.floor(data.length / 9))
   waveHeights.value = Array.from({ length: 9 }, (_, i) => {
     const val = data[i * step] / 255
     return Math.max(8, Math.round(val * 48))
@@ -63,8 +61,8 @@ async function startRecording() {
     mediaRecorder = new MediaRecorder(stream, options)
 
     audioChunks = []
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) audioChunks.push(e.data)
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) audioChunks.push(event.data)
     }
 
     mediaRecorder.onstop = () => {
@@ -72,7 +70,7 @@ async function startRecording() {
       store.setAudio(blob, elapsedSeconds.value)
       hasRecording.value = true
 
-      stream.getTracks().forEach(t => t.stop())
+      stream.getTracks().forEach(track => track.stop())
       if (audioContext) {
         audioContext.close()
         audioContext = null
@@ -81,42 +79,46 @@ async function startRecording() {
       audioLevel.value = 0
     }
 
+    audioChunks = []
+    elapsedSeconds.value = 0
+    hasRecording.value = false
     mediaRecorder.start(100)
     isRecording.value = true
     isPaused.value = false
-    recordingStartTime = Date.now()
     store.meetingStartTime = new Date().toISOString()
     store.meetingEndTime = null
 
-    timerInterval = setInterval(() => {
-      if (!isPaused.value) elapsedSeconds.value++
+    timerInterval = window.setInterval(() => {
+      if (!isPaused.value) elapsedSeconds.value += 1
     }, 1000)
 
     updateWaveform()
     emit('toast', { type: 'info', message: '開始錄音...' })
-  } catch (err) {
-    if (err.name === 'NotAllowedError') {
-      emit('toast', { type: 'error', message: '請允許麥克風存取權限' })
-    } else {
-      emit('toast', { type: 'error', message: '無法啟動錄音: ' + err.message })
+  } catch (error) {
+    if (error.name === 'NotAllowedError') {
+      emit('toast', { type: 'error', message: '請先允許瀏覽器使用麥克風。' })
+      return
     }
+    emit('toast', { type: 'error', message: `無法開始錄音：${error.message}` })
   }
 }
 
 function pauseRecording() {
   if (!mediaRecorder) return
+
   if (isPaused.value) {
     mediaRecorder.resume()
     isPaused.value = false
     updateWaveform()
-    emit('toast', { type: 'info', message: '繼續錄音' })
-  } else {
-    mediaRecorder.pause()
-    isPaused.value = true
-    cancelAnimationFrame(animationFrame)
-    waveHeights.value = Array(9).fill(8)
-    emit('toast', { type: 'info', message: '錄音已暫停' })
+    emit('toast', { type: 'info', message: '已繼續錄音' })
+    return
   }
+
+  mediaRecorder.pause()
+  isPaused.value = true
+  cancelAnimationFrame(animationFrame)
+  waveHeights.value = Array(9).fill(8)
+  emit('toast', { type: 'info', message: '錄音已暫停' })
 }
 
 function stopRecording() {
@@ -127,7 +129,7 @@ function stopRecording() {
   mediaRecorder.stop()
   isRecording.value = false
   isPaused.value = false
-  emit('toast', { type: 'success', message: `錄音完成（${formattedTime.value}）` })
+  emit('toast', { type: 'success', message: `錄音完成，共 ${formattedTime.value}` })
 }
 
 function discardRecording() {
@@ -151,7 +153,7 @@ function getSupportedMimeType() {
     'audio/ogg;codecs=opus',
     'audio/mp4',
   ]
-  return types.find(t => MediaRecorder.isTypeSupported(t)) || ''
+  return types.find(type => MediaRecorder.isTypeSupported(type)) || ''
 }
 
 onUnmounted(() => {
@@ -165,136 +167,123 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
-    <!-- Header -->
-    <div class="text-center pt-8 pb-4 px-6">
-      <h1 class="text-2xl font-bold text-white tracking-tight">🎙 會議室小助手</h1>
-      <p class="text-slate-400 text-sm mt-1">點選下方按鈕開始錄音</p>
+  <div class="relative flex h-full min-h-0 flex-col overflow-hidden lg:px-8 lg:py-6">
+    <div class="shrink-0 px-6 pb-4 pt-8 text-center lg:px-0 lg:pb-5 lg:pt-2">
+      <h1 class="text-2xl font-bold tracking-tight text-white">會議錄音</h1>
+      <p class="mt-1 text-sm text-slate-400">先錄音，再送進上傳與 OpenClaw 對話流程。</p>
     </div>
 
-    <!-- Meeting title input -->
-    <div class="px-6 pb-2">
-      <input
-        v-model="store.meetingTitle"
-        :disabled="isRecording"
-        type="text"
-        placeholder="輸入會議名稱（將作為檔名）"
-        class="w-full rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition-all"
-        style="background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12);"
-        :style="isRecording ? 'opacity:0.4;cursor:not-allowed' : ''"
-      />
-    </div>
+    <div class="flex-1 min-h-0 overflow-y-auto px-6 pb-8 lg:px-0">
+      <div class="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)] lg:items-start lg:gap-6">
+      <div class="glass-card flex flex-col gap-6 p-5 lg:p-8">
+        <input
+          v-model="store.meetingTitle"
+          :disabled="isRecording"
+          type="text"
+          placeholder="輸入會議標題"
+          class="w-full rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition-all"
+          style="background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12);"
+          :style="isRecording ? 'opacity:0.4;cursor:not-allowed' : ''"
+        />
 
-    <!-- Waveform area -->
-    <div class="flex-1 flex flex-col items-center justify-center px-6 gap-6">
-      <!-- Waveform visualizer -->
-      <div class="glass-card w-full py-6 px-4 flex items-center justify-center gap-1.5 min-h-24">
-        <template v-if="isRecording && !isPaused">
-          <div
-            v-for="(h, i) in waveHeights"
-            :key="i"
-            class="waveform-bar transition-all duration-75"
-            :style="{ height: h + 'px' }"
-          />
-        </template>
-        <template v-else-if="isPaused">
-          <div class="flex items-center gap-2 text-amber-400">
-            <span class="text-2xl">⏸</span>
-            <span class="text-sm font-medium">錄音暫停中</span>
-          </div>
-        </template>
-        <template v-else-if="hasRecording">
-          <div class="w-full">
-            <p class="text-center text-emerald-400 text-sm mb-3 font-medium">✅ 錄音完成</p>
-            <audio
-              :src="store.audioUrl"
-              controls
-              class="w-full rounded-xl"
-              style="height: 40px;"
-            />
-          </div>
-        </template>
-        <template v-else>
-          <div class="flex flex-col items-center gap-1 opacity-30">
-            <div class="flex items-end gap-1.5 h-12">
-              <div v-for="h in [16, 28, 40, 32, 48, 24, 36, 20, 32]" :key="h"
-                class="waveform-bar" :style="{ height: h + 'px' }" />
+        <div class="flex min-h-[15rem] items-center justify-center rounded-[1.5rem] border border-white/8 bg-slate-950/35 px-4 py-6 lg:min-h-[22rem]">
+          <template v-if="isRecording && !isPaused">
+            <div class="flex items-center justify-center gap-1.5">
+              <div
+                v-for="(height, index) in waveHeights"
+                :key="index"
+                class="waveform-bar transition-all duration-75"
+                :style="{ height: `${height}px` }"
+              />
             </div>
-            <p class="text-slate-400 text-xs mt-2">等待錄音...</p>
-          </div>
-        </template>
-      </div>
-
-      <!-- Timer -->
-      <div class="text-center">
-        <div
-          class="text-5xl font-mono font-bold tracking-widest"
-          :class="isRecording && !isPaused ? 'text-red-400' : 'text-white'"
-        >
-          {{ formattedTime }}
+          </template>
+          <template v-else-if="isPaused">
+            <div class="flex items-center gap-2 text-amber-400">
+              <span class="text-2xl">||</span>
+              <span class="text-sm font-medium">錄音已暫停</span>
+            </div>
+          </template>
+          <template v-else-if="hasRecording">
+            <div class="w-full max-w-xl">
+              <p class="mb-3 text-center text-sm font-medium text-emerald-400">錄音完成，可先播放確認</p>
+              <audio
+                :src="store.audioUrl"
+                controls
+                class="w-full rounded-xl"
+                style="height: 40px;"
+              />
+            </div>
+          </template>
+          <template v-else>
+            <div class="flex flex-col items-center gap-1 opacity-30">
+              <div class="flex h-12 items-end gap-1.5">
+                <div v-for="height in [16, 28, 40, 32, 48, 24, 36, 20, 32]" :key="height" class="waveform-bar" :style="{ height: `${height}px` }" />
+              </div>
+              <p class="mt-2 text-xs text-slate-400">等待開始錄音...</p>
+            </div>
+          </template>
         </div>
-        <p v-if="isRecording" class="text-xs mt-1.5"
-          :class="isPaused ? 'text-amber-400' : 'text-red-400 animate-pulse'">
-          {{ isPaused ? '暫停中' : '● 錄音中' }}
-        </p>
-      </div>
 
-      <!-- Controls -->
-      <div class="w-full flex flex-col gap-3">
-        <!-- Not recording, no recording -->
-        <template v-if="!isRecording && !hasRecording">
-          <button class="btn-primary" @click="startRecording">
-            <span class="text-xl">🎙</span>
-            開始錄音
-          </button>
-        </template>
-
-        <!-- Recording in progress -->
-        <template v-if="isRecording">
-          <div class="flex gap-3">
-            <button
-              class="btn-primary btn-secondary flex-1"
-              @click="pauseRecording"
-            >
-              <span>{{ isPaused ? '▶️' : '⏸' }}</span>
-              {{ isPaused ? '繼續' : '暫停' }}
-            </button>
-            <button
-              class="btn-primary btn-danger flex-1"
-              :class="{ 'record-btn-ring': !isPaused }"
-              @click="stopRecording"
-            >
-              <span>⏹</span>
-              停止錄音
-            </button>
+        <div class="text-center">
+          <div class="text-5xl font-mono font-bold tracking-widest text-white lg:text-6xl" :class="isRecording && !isPaused ? 'text-red-400' : 'text-white'">
+            {{ formattedTime }}
           </div>
-        </template>
-
-        <!-- Recording done -->
-        <template v-if="!isRecording && hasRecording">
-          <button class="btn-primary" @click="goToUpload">
-            <span class="text-xl">📤</span>
-            下一步：上傳錄音
-          </button>
-          <button class="btn-primary btn-secondary" @click="startRecording">
-            <span>🔄</span>
-            重新錄音
-          </button>
-          <button
-            class="text-red-400 text-sm py-2 text-center"
-            @click="discardRecording"
-          >
-            捨棄此次錄音
-          </button>
-        </template>
+          <p v-if="isRecording" class="mt-1.5 text-xs" :class="isPaused ? 'text-amber-400' : 'animate-pulse text-red-400'">
+            {{ isPaused ? '暫停中' : '錄音中' }}
+          </p>
+        </div>
       </div>
-    </div>
 
-    <!-- Tip -->
-    <div class="px-6 pb-8">
-      <p class="text-slate-500 text-xs text-center leading-relaxed">
-        錄音完成後將自動上傳至遠端伺服器
-      </p>
+      <div class="glass-card flex flex-col gap-6 p-5 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-8rem)] lg:overflow-y-auto lg:p-6">
+        <div class="rounded-[1.5rem] border border-white/8 bg-slate-950/30 p-4">
+          <p class="text-sm text-slate-400">目前狀態</p>
+          <p class="mt-2 text-lg font-semibold text-white">
+            {{ isRecording ? (isPaused ? '錄音暫停中' : '正在錄音') : (hasRecording ? '已完成錄音' : '尚未開始錄音') }}
+          </p>
+          <p class="mt-1 text-sm text-slate-400">音量強度 {{ audioLevel }}%</p>
+        </div>
+
+        <p class="text-xs leading-relaxed text-slate-500 lg:text-sm">
+          手機版會把所有區塊往下排列，桌機版則將波形區與操作區分開，按鈕會固定留在可點擊範圍內。
+        </p>
+
+        <div class="pointer-events-auto mt-auto flex flex-col gap-3">
+          <template v-if="!isRecording && !hasRecording">
+            <button class="btn-primary relative z-10" type="button" @click="startRecording">
+              <span class="text-xl">●</span>
+              開始錄音
+            </button>
+          </template>
+
+          <template v-if="isRecording">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1">
+              <button class="btn-primary btn-secondary relative z-10" type="button" @click="pauseRecording">
+                <span>{{ isPaused ? '▶' : '||' }}</span>
+                {{ isPaused ? '繼續錄音' : '暫停錄音' }}
+              </button>
+              <button class="btn-primary btn-danger relative z-10" type="button" :class="{ 'record-btn-ring': !isPaused }" @click="stopRecording">
+                <span>■</span>
+                停止錄音
+              </button>
+            </div>
+          </template>
+
+          <template v-if="!isRecording && hasRecording">
+            <button class="btn-primary relative z-10" type="button" @click="goToUpload">
+              <span class="text-xl">↑</span>
+              前往上傳
+            </button>
+            <button class="btn-primary btn-secondary relative z-10" type="button" @click="startRecording">
+              <span>↻</span>
+              重新錄音
+            </button>
+            <button class="relative z-10 py-2 text-center text-sm text-red-400" type="button" @click="discardRecording">
+              捨棄這段錄音
+            </button>
+          </template>
+        </div>
+      </div>
+      </div>
     </div>
   </div>
 </template>

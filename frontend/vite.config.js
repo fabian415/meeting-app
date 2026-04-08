@@ -3,6 +3,8 @@ import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 import basicSsl from '@vitejs/plugin-basic-ssl'
 
+const devHost = process.env.VITE_DEV_HOST || '172.22.12.162'
+
 export default defineConfig({
   plugins: [
     vue(),
@@ -12,6 +14,11 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    strictPort: true,
+    hmr: {
+      host: devHost,
+      protocol: 'wss',
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:3001',

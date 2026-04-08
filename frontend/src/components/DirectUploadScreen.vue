@@ -111,65 +111,75 @@ function formatBytes(bytes) {
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
-    <div class="px-6 pt-8 pb-4 text-center">
-      <h1 class="text-2xl font-bold text-white tracking-tight">上傳既有錄音檔</h1>
-      <p class="mt-1 text-sm text-slate-400">輸入會議名稱並選擇音檔，接著沿用原本的 OpenClaw 流程。</p>
+  <div class="flex h-full flex-col lg:px-8 lg:py-8">
+    <div class="px-6 pb-4 pt-8 text-center lg:px-0 lg:pb-8 lg:pt-4">
+      <h1 class="text-2xl font-bold tracking-tight text-white">直接上傳音檔</h1>
+      <p class="mt-1 text-sm text-slate-400">匯入既有錄音檔，手機與桌機都能順暢完成上傳流程。</p>
     </div>
 
-    <div class="flex-1 px-6 pb-8">
-      <div class="glass-card flex h-full flex-col gap-5 p-5">
-        <label class="flex flex-col gap-2">
-          <span class="text-sm font-medium text-slate-200">會議名稱</span>
+    <div class="flex-1 px-6 pb-8 lg:min-h-0 lg:px-0 lg:pb-0">
+      <div class="glass-card flex h-full flex-col gap-5 p-5 lg:grid lg:grid-cols-[minmax(0,1.05fr)_minmax(22rem,0.95fr)] lg:gap-8 lg:p-8">
+        <div class="flex flex-col gap-5">
+          <label class="flex flex-col gap-2">
+            <span class="text-sm font-medium text-slate-200">會議標題</span>
+            <input
+              v-model="store.meetingTitle"
+              type="text"
+              placeholder="例如：產品週會"
+              class="w-full rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition-all"
+              style="background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12);"
+            />
+          </label>
+
           <input
-            v-model="store.meetingTitle"
-            type="text"
-            placeholder="例如：產品需求訪談"
-            class="w-full rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition-all"
-            style="background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12);"
+            ref="fileInput"
+            type="file"
+            accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.webm,.flac"
+            class="hidden"
+            @change="handleFileChange"
           />
-        </label>
 
-        <input
-          ref="fileInput"
-          type="file"
-          accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.webm,.flac"
-          class="hidden"
-          @change="handleFileChange"
-        />
-
-        <div
-          class="rounded-2xl border border-dashed border-white/15 bg-white/[0.03] px-4 py-6 text-center"
-        >
-          <p class="text-sm text-slate-300">支援常見錄音格式，像是 `mp3`、`wav`、`m4a`、`webm`。</p>
-          <button class="btn-primary mt-4" type="button" @click="openFilePicker">
-            <span class="text-xl">↑</span>
-            選擇錄音檔
-          </button>
-        </div>
-
-        <div v-if="selectedFile" class="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4">
-          <div class="flex items-start justify-between gap-4">
-            <div class="min-w-0">
-              <p class="truncate text-sm font-medium text-white">{{ selectedFile.name }}</p>
-              <p class="mt-1 text-xs text-slate-300">{{ formatBytes(selectedFile.size) }}</p>
-              <p class="mt-1 text-xs text-slate-400">
-                {{ loadingDuration ? '讀取音檔資訊中...' : formatDuration(store.audioDuration) }}
-              </p>
-            </div>
-            <button class="text-sm text-red-300 transition-colors hover:text-red-200" type="button" @click="clearSelectedFile">
-              移除
+          <div class="flex flex-1 flex-col justify-center rounded-2xl border border-dashed border-white/15 bg-white/[0.03] px-4 py-8 text-center lg:min-h-[22rem] lg:px-8">
+            <p class="text-sm text-slate-300">支援 `mp3`、`wav`、`m4a`、`webm` 等常見音訊格式。</p>
+            <button class="btn-primary mt-4" type="button" @click="openFilePicker">
+              <span class="text-xl">+</span>
+              選擇音檔
             </button>
           </div>
         </div>
 
-        <div class="mt-auto flex flex-col gap-3">
-          <button class="btn-primary" type="button" :disabled="!store.audioBlob" @click="submitUpload">
-            送出並進入 OpenClaw 流程
-          </button>
-          <p class="text-center text-xs leading-relaxed text-slate-500">
-            送出後會先經過原本的上傳頁，再把建議訊息帶進 OpenClaw 對話。
-          </p>
+        <div class="flex flex-col gap-5 lg:justify-between">
+          <div class="rounded-2xl border border-white/10 bg-slate-950/25 p-5 lg:min-h-[22rem]">
+            <p class="text-sm font-medium text-slate-200">上傳摘要</p>
+
+            <div v-if="selectedFile" class="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4">
+              <div class="flex items-start justify-between gap-4">
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-medium text-white">{{ selectedFile.name }}</p>
+                  <p class="mt-1 text-xs text-slate-300">{{ formatBytes(selectedFile.size) }}</p>
+                  <p class="mt-1 text-xs text-slate-400">
+                    {{ loadingDuration ? '讀取音檔長度中...' : formatDuration(store.audioDuration) }}
+                  </p>
+                </div>
+                <button class="text-sm text-red-300 transition-colors hover:text-red-200" type="button" @click="clearSelectedFile">
+                  清除
+                </button>
+              </div>
+            </div>
+
+            <div v-else class="mt-4 flex min-h-40 items-center justify-center rounded-2xl border border-dashed border-white/8 px-4 text-center text-sm text-slate-500">
+              尚未選擇音檔。桌機版會固定顯示這個摘要區，手機版則會依序往下顯示。
+            </div>
+          </div>
+
+          <div class="mt-auto flex flex-col gap-3">
+            <button class="btn-primary" type="button" :disabled="!store.audioBlob" @click="submitUpload">
+              送出到 OpenClaw
+            </button>
+            <p class="text-center text-xs leading-relaxed text-slate-500 lg:text-left">
+              先確認標題與檔案資訊，再進入上傳與後續對話流程。
+            </p>
+          </div>
         </div>
       </div>
     </div>
