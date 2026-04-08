@@ -149,7 +149,7 @@ watch(() => store.currentView, (value) => {
           >
             <span class="text-xl">👥</span>
             <div>
-              <p class="text-sm font-medium leading-tight">Speaker 管理</p>
+              <p class="text-sm font-medium leading-tight">聲紋管理</p>
               <p class="mt-0.5 text-xs opacity-50">管理聲紋樣本與播放測試</p>
             </div>
           </button>
