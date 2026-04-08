@@ -14,6 +14,7 @@ const highlightHandle = ref(null)
 const lastSignature = ref('')
 const scrollViewport = ref(null)
 const highlightedMessageId = ref('')
+const expandedThoughtGroups = ref({})
 
 const hasPendingAssistantReply = computed(() => {
   const messages = store.conversationMessages
@@ -22,11 +23,20 @@ const hasPendingAssistantReply = computed(() => {
   const lastUserIndex = [...messages].map(message => message.role).lastIndexOf('user')
   if (lastUserIndex === -1) return false
 
-  return !messages.slice(lastUserIndex + 1).some(message => message.role === 'assistant')
+  return !messages.slice(lastUserIndex + 1).some(message => (
+    message.role === 'assistant'
+    && !message.isThought
+    && !message.isProcess
+  ))
 })
 
 function buildSignature(messages) {
-  return JSON.stringify(messages.map(message => [message.role, message.content]))
+  return JSON.stringify(messages.map(message => [
+    message.role,
+    message.content,
+    Boolean(message.isThought),
+    Boolean(message.isProcess),
+  ]))
 }
 
 function visibleMessages(messages) {
@@ -35,6 +45,120 @@ function visibleMessages(messages) {
     if (!message?.id) return true
     return !hiddenIds.has(message.id)
   })
+}
+
+const conversationItems = computed(() => {
+  const items = []
+  let currentCollapsedGroup = null
+
+  for (const message of store.conversationMessages) {
+    const groupKind = getCollapsedGroupKind(message)
+
+    if (groupKind) {
+      if (!currentCollapsedGroup || currentCollapsedGroup.kind !== groupKind) {
+        currentCollapsedGroup = {
+          kind: groupKind,
+          key: message.id || `${groupKind}-${items.length}`,
+          messages: [],
+        }
+        items.push(currentCollapsedGroup)
+      }
+
+      currentCollapsedGroup.messages.push(message)
+      continue
+    }
+
+    currentCollapsedGroup = null
+    items.push({
+      kind: 'message',
+      key: message.id || `${message.role}:${message.content}:${items.length}`,
+      message,
+    })
+  }
+
+  return items
+})
+
+function getCollapsedGroupKind(message) {
+  if (message?.isThought) return 'thought-group'
+  if (!message?.isProcess) return null
+
+  if (message.role === 'system') return 'system-group'
+  if (message.role === 'toolResult' || message.role === 'tool') return 'tool-group'
+  return 'process-group'
+}
+
+function isThoughtGroupExpanded(group) {
+  return Boolean(expandedThoughtGroups.value[group.key])
+}
+
+function toggleThoughtGroup(group) {
+  expandedThoughtGroups.value = {
+    ...expandedThoughtGroups.value,
+    [group.key]: !expandedThoughtGroups.value[group.key],
+  }
+}
+
+function getGroupTitle(group) {
+  if (group.kind === 'thought-group') return 'OpenClaw 思考訊息'
+  if (group.kind === 'system-group') return 'OpenClaw 系統事件'
+  if (group.kind === 'tool-group') return 'OpenClaw 工具輸出'
+  return 'OpenClaw 執行過程'
+}
+
+function getGroupIcon(group) {
+  if (group.kind === 'thought-group') return '思'
+  if (group.kind === 'system-group') return '系'
+  if (group.kind === 'tool-group') return '工'
+  return '流'
+}
+
+function getGroupClasses(group) {
+  if (group.kind === 'thought-group') {
+    return {
+      wrapper: 'border-amber-200/10 bg-amber-50/5 text-amber-50',
+      badge: 'border-amber-200/20 bg-amber-300/15 text-amber-100',
+      title: 'text-amber-100',
+      meta: 'text-amber-100/60',
+      action: 'text-amber-100/70',
+      divider: 'border-amber-200/10',
+      item: 'bg-black/15 text-amber-50/85',
+    }
+  }
+
+  if (group.kind === 'system-group') {
+    return {
+      wrapper: 'border-sky-200/10 bg-sky-50/5 text-sky-50',
+      badge: 'border-sky-200/20 bg-sky-300/15 text-sky-100',
+      title: 'text-sky-100',
+      meta: 'text-sky-100/60',
+      action: 'text-sky-100/70',
+      divider: 'border-sky-200/10',
+      item: 'bg-black/15 text-sky-50/85',
+    }
+  }
+
+  if (group.kind === 'tool-group') {
+    return {
+      wrapper: 'border-emerald-200/10 bg-emerald-50/5 text-emerald-50',
+      badge: 'border-emerald-200/20 bg-emerald-300/15 text-emerald-100',
+      title: 'text-emerald-100',
+      meta: 'text-emerald-100/60',
+      action: 'text-emerald-100/70',
+      divider: 'border-emerald-200/10',
+      item: 'bg-black/15 text-emerald-50/85',
+    }
+  }
+
+  return {
+    wrapper: 'border-violet-200/10 bg-violet-50/5 text-violet-50',
+    badge: 'border-violet-200/20 bg-violet-300/15 text-violet-100',
+    title: 'text-violet-100',
+    meta: 'text-violet-100/60',
+    action: 'text-violet-100/70',
+    divider: 'border-violet-200/10',
+    item: 'bg-black/15 text-violet-50/85',
+  }
 }
 
 function scrollToLatest({ smooth = true } = {}) {
@@ -51,7 +175,7 @@ function flashLatestAssistant(messages, previousMessages) {
   const previousIds = new Set((previousMessages || []).map(message => message.id || `${message.role}:${message.content}`))
   const latestAssistant = [...messages].reverse().find(message => {
     const key = message.id || `${message.role}:${message.content}`
-    return message.role === 'assistant' && !previousIds.has(key)
+    return message.role === 'assistant' && !message.isThought && !message.isProcess && !previousIds.has(key)
   })
 
   if (!latestAssistant) return
@@ -193,29 +317,71 @@ onUnmounted(() => {
 
 <template>
   <div class="flex h-full flex-col pt-14">
-    <div class="flex items-center justify-between px-4 pb-3">
+    <!-- <div class="flex items-center justify-between px-4 pb-3">
       <div class="min-w-0 pr-4">
         <p class="text-white text-lg font-semibold">OpenClaw 對話</p>
         <p class="text-slate-400 text-xs truncate">{{ store.conversationContext?.audioPath || '尚未提供音檔位置' }}</p>
       </div>
-    </div>
+    </div> -->
 
     <div class="flex-1 min-h-0 px-3 pb-40">
-      <div ref="scrollViewport" class="h-full overflow-y-auto rounded-[28px] border border-white/10 bg-slate-950/35 px-3 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-md space-y-3 scroll-smooth">
+      <div ref="scrollViewport" class="h-full overflow-y-auto border border-white/10 bg-slate-950/35 px-3 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-md space-y-3 scroll-smooth">
         <div
-          v-for="(message, index) in store.conversationMessages"
-          :key="message.id || `${message.role}-${index}`"
+          v-for="(item, index) in conversationItems"
+          :key="item.key || index"
           class="flex"
-          :class="message.role === 'user' ? 'justify-end' : 'justify-start'"
+          :class="item.kind === 'message' && item.message.role === 'user' ? 'justify-end' : 'justify-start'"
         >
+          <template v-if="item.kind === 'message'">
+            <div
+              class="max-w-[88%] rounded-3xl px-4 py-3 text-[15px] leading-7 whitespace-pre-wrap break-all shadow-sm transition-all duration-500"
+              :class="[
+                item.message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-white/10 text-slate-100',
+                highlightedMessageId === (item.message.id || `${item.message.role}:${item.message.content}`) ? 'ring-2 ring-cyan-300/70 bg-cyan-400/15 shadow-[0_0_0_1px_rgba(103,232,249,0.35)]' : ''
+              ]"
+            >
+              {{ item.message.content }}
+            </div>
+          </template>
           <div
-            class="max-w-[88%] rounded-3xl px-4 py-3 text-[15px] leading-7 whitespace-pre-wrap break-all shadow-sm transition-all duration-500"
-            :class="[
-              message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-white/10 text-slate-100',
-              highlightedMessageId === (message.id || `${message.role}:${message.content}`) ? 'ring-2 ring-cyan-300/70 bg-cyan-400/15 shadow-[0_0_0_1px_rgba(103,232,249,0.35)]' : ''
-            ]"
+            v-else
+            class="max-w-[88%] overflow-hidden rounded-3xl border shadow-sm"
+            :class="getGroupClasses(item).wrapper"
           >
-            {{ message.content }}
+            <button
+              type="button"
+              class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-white/5"
+              @click="toggleThoughtGroup(item)"
+            >
+              <div class="flex items-center gap-3">
+                <span
+                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-semibold"
+                  :class="getGroupClasses(item).badge"
+                >
+                  {{ getGroupIcon(item) }}
+                </span>
+                <div>
+                  <p class="font-medium" :class="getGroupClasses(item).title">{{ getGroupTitle(item) }}</p>
+                  <p class="mt-0.5 text-xs" :class="getGroupClasses(item).meta">{{ item.messages.length }} 則，預設收折</p>
+                </div>
+              </div>
+              <span class="text-xs" :class="getGroupClasses(item).action">{{ isThoughtGroupExpanded(item) ? '收起' : '展開' }}</span>
+            </button>
+
+            <div
+              v-if="isThoughtGroupExpanded(item)"
+              class="space-y-2 border-t px-3 py-3"
+              :class="getGroupClasses(item).divider"
+            >
+              <div
+                v-for="(thoughtMessage, thoughtIndex) in item.messages"
+                :key="thoughtMessage.id || `${item.key}-${thoughtIndex}`"
+                class="rounded-2xl px-3 py-2 text-sm leading-6 whitespace-pre-wrap break-all"
+                :class="getGroupClasses(item).item"
+              >
+                {{ thoughtMessage.content }}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -234,7 +400,7 @@ onUnmounted(() => {
     </div>
 
     <div class="absolute inset-x-0 bottom-0 z-10 px-3 pb-3 pt-4" style="background: linear-gradient(180deg, rgba(15,23,42,0) 0%, rgba(15,23,42,0.92) 28%, rgba(15,23,42,0.98) 100%);">
-      <div class="mx-auto max-w-md rounded-[24px] border border-white/10 bg-slate-950/75 px-3 py-2.5 shadow-2xl backdrop-blur-xl">
+      <div class="mx-auto max-w-md border border-white/10 bg-slate-950/75 px-3 py-2.5 shadow-2xl backdrop-blur-xl">
         <div class="mb-1.5 flex items-center justify-between px-1 text-[11px] text-slate-400">
           <span>{{ store.conversationContext?.skill || 'meeting-transcription' }}</span>
           <button class="text-slate-300 transition-colors hover:text-white" :disabled="loadingHistory" @click="refreshHistory">

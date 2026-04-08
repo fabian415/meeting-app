@@ -82,6 +82,116 @@ function pickText(value) {
   return ''
 }
 
+function normalizeString(value) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : ''
+}
+
+function isThoughtEntry(entry) {
+  const typeHints = [
+    entry?.kind,
+    entry?.type,
+    entry?.channel,
+    entry?.category,
+    entry?.subtype,
+    entry?.message?.kind,
+    entry?.message?.type,
+    entry?.message?.channel,
+    entry?.metadata?.kind,
+    entry?.metadata?.type,
+    entry?.metadata?.phase,
+    entry?.metadata?.channel,
+  ]
+    .map(normalizeString)
+    .filter(Boolean)
+
+  const thoughtTypes = new Set([
+    'analysis',
+    'chain_of_thought',
+    'internal_reasoning',
+    'internal_thought',
+    'reasoning',
+    'thinking',
+    'thought',
+  ])
+
+  if (typeHints.some(value => thoughtTypes.has(value))) return true
+
+  const visibilityHints = [
+    entry?.visibility,
+    entry?.message?.visibility,
+    entry?.metadata?.visibility,
+  ]
+    .map(normalizeString)
+    .filter(Boolean)
+
+  if (visibilityHints.some(value => ['hidden', 'internal', 'private'].includes(value))) return true
+
+  return false
+}
+
+function isProcessEntry(entry, role) {
+  const normalizedRole = normalizeString(role)
+  if (['tool', 'toolresult', 'function', 'functionresult'].includes(normalizedRole)) return true
+
+  const typeHints = [
+    entry?.kind,
+    entry?.type,
+    entry?.channel,
+    entry?.category,
+    entry?.subtype,
+    entry?.message?.kind,
+    entry?.message?.type,
+    entry?.message?.channel,
+    entry?.metadata?.kind,
+    entry?.metadata?.type,
+    entry?.metadata?.phase,
+    entry?.metadata?.channel,
+  ]
+    .map(normalizeString)
+    .filter(Boolean)
+
+  if (typeHints.some(value => ['tool', 'tool_call', 'tool_result', 'command', 'event', 'status'].includes(value))) {
+    return true
+  }
+
+  return false
+}
+
+function splitMixedMessage(message) {
+  if (!message?.content || typeof message.content !== 'string') return [message]
+  if (message.role !== 'user' && message.role !== 'assistant') return [message]
+
+  const lines = message.content.split('\n')
+  if (!lines[0]?.trim().startsWith('System:')) return [message]
+
+  const actualMessageStartIndex = lines.findIndex((line, index) => (
+    index > 0
+    && /^\[[^\]]+\]/.test(line.trim())
+  ))
+
+  if (actualMessageStartIndex === -1) return [message]
+
+  const systemContent = lines.slice(0, actualMessageStartIndex).join('\n').trim()
+  const actualContent = lines.slice(actualMessageStartIndex).join('\n').trim()
+
+  if (!systemContent || !actualContent) return [message]
+
+  return [
+    {
+      ...message,
+      id: `${message.id}-system`,
+      role: 'system',
+      content: systemContent,
+      isProcess: true,
+    },
+    {
+      ...message,
+      id: `${message.id}-user`,
+      content: actualContent,
+    },
+  ]
+}
+
 function normalizeHistoryPayload(payload) {
   const list = Array.isArray(payload)
     ? payload
@@ -94,6 +204,8 @@ function normalizeHistoryPayload(payload) {
         || entry?.author?.role
         || entry?.kind
         || 'assistant'
+      const isThought = isThoughtEntry(entry)
+      const isProcess = isProcessEntry(entry, role)
 
       const content = pickText(
         entry?.content
@@ -109,17 +221,31 @@ function normalizeHistoryPayload(payload) {
         role,
         content,
         createdAt: entry?.createdAt || entry?.ts || entry?.timestamp || null,
+        isThought,
+        isProcess,
+        type: entry?.type || entry?.kind || entry?.message?.type || entry?.message?.kind || null,
+        visibility: entry?.visibility || entry?.message?.visibility || entry?.metadata?.visibility || null,
       }
     })
     .filter(message => message.content)
+    .flatMap(splitMixedMessage)
 }
 
 function conversationSignature(messages) {
-  return JSON.stringify(messages.map(message => [message.role, message.content]))
+  return JSON.stringify(messages.map(message => [
+    message.role,
+    message.content,
+    Boolean(message.isThought),
+    Boolean(message.isProcess),
+  ]))
 }
 
 function getLastAssistantReply(messages) {
-  return [...messages].reverse().find(message => message.role === 'assistant')?.content || ''
+  return [...messages].reverse().find(message => (
+    message.role === 'assistant'
+    && !message.isThought
+    && !message.isProcess
+  ))?.content || ''
 }
 
 class OpenClawGatewayClient {
