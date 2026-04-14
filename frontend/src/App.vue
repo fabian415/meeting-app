@@ -6,7 +6,7 @@ import DirectUploadScreen from './components/DirectUploadScreen.vue'
 import UploadScreen from './components/UploadScreen.vue'
 import ConversationScreen from './components/ConversationScreen.vue'
 import SpeakerScreen from './components/SpeakerScreen.vue'
-import GlossaryScreen from './components/GlossaryScreen.vue'
+import GlossaryScreen from './components/GlossaryImportManagerScreen.vue'
 import Toast from './components/Toast.vue'
 
 const store = useMeetingStore()

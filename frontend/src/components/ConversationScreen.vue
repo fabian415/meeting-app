@@ -1,13 +1,14 @@
 ﻿<script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useMeetingStore } from '../stores/meeting.js'
-import { chatWithOpenClaw, getOpenClawHistory } from '../api/index.js'
+import { chatWithOpenClaw, finalizeProperNounImport, getOpenClawHistory } from '../api/index.js'
 
 const emit = defineEmits(['toast'])
 const store = useMeetingStore()
 
 const draft = ref('')
 const sending = ref(false)
+const finalizingImport = ref(false)
 const loadingHistory = ref(false)
 const pollHandle = ref(null)
 const highlightHandle = ref(null)
@@ -275,6 +276,38 @@ async function sendMessage() {
   }
 }
 
+async function finalizeImport() {
+  const outputRemotePath = store.conversationContext?.outputRemotePath
+  if (!outputRemotePath || finalizingImport.value) return
+
+  finalizingImport.value = true
+
+  try {
+    const result = await finalizeProperNounImport(outputRemotePath)
+    store.conversationContext = {
+      ...(store.conversationContext || {}),
+      importCompleted: true,
+      importSummary: {
+        extractedCount: result.extractedCount || 0,
+        addedCount: result.addedCount || 0,
+        updatedCount: result.updatedCount || 0,
+        skippedCount: result.skippedCount || 0,
+      },
+    }
+    emit('toast', {
+      type: 'success',
+      message: `匯入完成，新增 ${result.addedCount || 0} 筆、更新 ${result.updatedCount || 0} 筆`,
+    })
+  } catch (error) {
+    emit('toast', {
+      type: 'error',
+      message: error.response?.data?.message || '匯入專有名詞失敗',
+    })
+  } finally {
+    finalizingImport.value = false
+  }
+}
+
 function updatePolling() {
   if (pollHandle.value) {
     window.clearInterval(pollHandle.value)
@@ -319,6 +352,16 @@ onMounted(async () => {
     window.visualViewport.addEventListener('resize', updateComposerOffset)
     window.visualViewport.addEventListener('scroll', updateComposerOffset)
   }
+})
+
+const canFinalizeProperNounImport = computed(() => {
+  const context = store.conversationContext || {}
+  return (
+    context.skill === 'meeting-proper-noun-extractor'
+    && Boolean(context.outputRemotePath)
+    && !context.importCompleted
+    && !sending.value
+  )
 })
 
 watch(draft, (value) => {
@@ -395,7 +438,7 @@ onUnmounted(() => {
 
         <div v-if="!store.conversationMessages.length" class="flex justify-start">
           <div class="max-w-[92%] rounded-3xl border border-white/8 bg-white/5 px-4 py-3 text-sm leading-6 text-slate-400 sm:max-w-[82%] lg:max-w-[75%]">
-            音檔已上傳完成，請先確認下方草稿內容，再自行送出給 OpenClaw。
+            請先確認下方草稿內容，再自行送出給 OpenClaw。
           </div>
         </div>
 
@@ -417,9 +460,22 @@ onUnmounted(() => {
       <div class="mx-auto max-w-5xl rounded-[1.5rem] border border-white/10 bg-slate-950/75 px-3 py-2.5 shadow-2xl backdrop-blur-xl sm:px-4 sm:py-3 lg:px-5">
         <div class="mb-1.5 flex items-center justify-between px-1 text-[11px] text-slate-400">
           <span>{{ store.conversationContext?.skill || 'meeting-transcription' }}</span>
-          <button class="text-slate-300 transition-colors hover:text-white" :disabled="loadingHistory" @click="refreshHistory">
-            {{ loadingHistory ? '更新中...' : '重新整理' }}
-          </button>
+          <div class="flex items-center gap-3">
+            <span v-if="store.conversationContext?.importCompleted" class="text-emerald-300">
+              已匯入 proper nouns
+            </span>
+            <button
+              v-if="canFinalizeProperNounImport"
+              class="text-emerald-300 transition-colors hover:text-emerald-200 disabled:opacity-50"
+              :disabled="finalizingImport"
+              @click="finalizeImport"
+            >
+              {{ finalizingImport ? '匯入中...' : '匯入專有名詞' }}
+            </button>
+            <button class="text-slate-300 transition-colors hover:text-white" :disabled="loadingHistory" @click="refreshHistory">
+              {{ loadingHistory ? '更新中...' : '重新整理' }}
+            </button>
+          </div>
         </div>
         <textarea
           v-model="draft"

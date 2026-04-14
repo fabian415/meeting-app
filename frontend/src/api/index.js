@@ -96,3 +96,23 @@ export async function deleteProperNoun(term) {
   const res = await whisperApi.delete(`/proper-nouns/${encodeURIComponent(term)}`)
   return res.data
 }
+
+export async function importProperNounsFromFile(file) {
+  const form = new FormData()
+  form.append('sourceFile', file, file.name)
+
+  const res = await api.post('/glossary/prepare-import', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 240000,
+  })
+
+  return res.data
+}
+
+export async function finalizeProperNounImport(outputRemotePath) {
+  const res = await api.post('/glossary/finalize-import', {
+    outputRemotePath,
+  })
+
+  return res.data
+}
