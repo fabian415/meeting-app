@@ -1,6 +1,6 @@
 ﻿import express from 'express'
 import multer from 'multer'
-import { uploadFilesToFTP } from '../services/ftpService.js'
+import { uploadFilesToFTP } from '../services/ftpTransferServiceV2.js'
 import { getDefaultSessionId } from '../services/openclawService.js'
 
 const router = express.Router()
