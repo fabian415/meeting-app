@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useMeetingStore } from '../stores/meeting.js'
 import { uploadMeeting } from '../api/index.js'
+import { canUseRecordingDraftStore, clearRecordingDraft, getRecordingDraft } from '../services/recordingDraftStore.js'
 
 const emit = defineEmits(['toast'])
 const store = useMeetingStore()
@@ -25,9 +26,12 @@ async function doUpload() {
   }, 300)
 
   try {
+    const draftUpload = await getDraftUploadSegments()
     const result = await uploadMeeting({
       audioBlob: store.audioBlob,
       audioFileName: store.audioFileName,
+      audioSegments: draftUpload.segments,
+      segmentMimeType: draftUpload.mimeType,
       meetingTitle: store.meetingTitle,
       meetingStartTime: store.meetingStartTime,
       meetingEndTime: store.meetingEndTime,
@@ -39,6 +43,9 @@ async function doUpload() {
     status.value = 'success'
     uploadedFiles.value = result.files || []
     store.uploadResult = result
+    if (canUseRecordingDraftStore()) {
+      await clearRecordingDraft().catch(() => {})
+    }
 
     store.startConversation({
       sessionId: result.conversationContext?.sessionId || null,
@@ -55,6 +62,29 @@ async function doUpload() {
     errorMessage.value = err.response?.data?.message || err.message || '上傳失敗，請稍後再試'
 
     emit('toast', { type: 'error', message: errorMessage.value })
+  }
+}
+
+async function getDraftUploadSegments() {
+  if (!canUseRecordingDraftStore()) {
+    return { segments: [], mimeType: '' }
+  }
+
+  try {
+    const draft = await getRecordingDraft()
+    const sameRecording = draft.meta?.meetingStartTime && draft.meta.meetingStartTime === store.meetingStartTime
+
+    if (!sameRecording || draft.segments.length <= 1) {
+      return { segments: [], mimeType: '' }
+    }
+
+    return {
+      segments: draft.segments.map(segment => new Blob(segment.blobs, { type: draft.meta.mimeType || 'audio/webm' })),
+      mimeType: draft.meta.mimeType || 'audio/webm',
+    }
+  } catch (error) {
+    emit('toast', { type: 'error', message: `無法讀取續錄片段，將改以上方試播音檔上傳：${error.message}` })
+    return { segments: [], mimeType: '' }
   }
 }
 

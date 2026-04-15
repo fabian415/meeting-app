@@ -21,10 +21,28 @@ function getAudioFilename(audioBlob, fallbackName = '') {
   return `recording.${audioExt}`
 }
 
-export async function uploadMeeting({ audioBlob, audioFileName, meetingTitle, meetingStartTime, meetingEndTime, audioDuration }) {
+export async function uploadMeeting({
+  audioBlob,
+  audioFileName,
+  audioSegments = [],
+  segmentMimeType = '',
+  meetingTitle,
+  meetingStartTime,
+  meetingEndTime,
+  audioDuration,
+}) {
   const form = new FormData()
 
   form.append('audio', audioBlob, getAudioFilename(audioBlob, audioFileName))
+  audioSegments.forEach((segment, index) => {
+    const ext = segment.type.includes('ogg') ? 'ogg'
+      : segment.type.includes('mp4') ? 'm4a'
+      : segment.type.includes('mpeg') ? 'mp3'
+      : 'webm'
+    form.append('audioSegments', segment, `segment-${String(index + 1).padStart(3, '0')}.${ext}`)
+  })
+  if (segmentMimeType) form.append('segmentMimeType', segmentMimeType)
+  if (audioSegments.length > 1) form.append('outputAudioFormat', 'webm')
   form.append('meetingTitle', meetingTitle || '未命名會議')
   form.append('meetingStartTime', meetingStartTime || '')
   form.append('meetingEndTime', meetingEndTime || '')
@@ -32,6 +50,7 @@ export async function uploadMeeting({ audioBlob, audioFileName, meetingTitle, me
 
   const res = await api.post('/upload', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: audioSegments.length > 1 ? 600000 : undefined,
   })
   return res.data
 }

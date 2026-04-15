@@ -2,11 +2,12 @@
 import multer from 'multer'
 import { uploadFilesToFTP } from '../services/ftpTransferServiceV2.js'
 import { getDefaultSessionId } from '../services/openclawService.js'
+import { transcodeAudioSegments } from '../services/audioProcessingService.js'
 
 const router = express.Router()
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 200 * 1024 * 1024 },
+  limits: { fileSize: 500 * 1024 * 1024 },
 })
 
 function formatDuration(seconds) {
@@ -86,10 +87,22 @@ function buildOpenClawPrompt({ audioPath, notifyEmail, meetingTitle }) {
 
 router.post(
   '/',
-  upload.fields([{ name: 'audio', maxCount: 1 }]),
+  upload.fields([
+    { name: 'audio', maxCount: 1 },
+    { name: 'audioSegments', maxCount: 100 },
+  ]),
   async (req, res) => {
     try {
-      const audioFile = req.files?.audio?.[0]
+      const uploadedAudioFile = req.files?.audio?.[0]
+      const audioSegments = req.files?.audioSegments || []
+      const shouldTranscodeSegments = audioSegments.length > 1
+      const audioFile = shouldTranscodeSegments
+        ? await transcodeAudioSegments({
+            files: audioSegments,
+            segmentMimeType: req.body.segmentMimeType,
+            outputFormat: req.body.outputAudioFormat || process.env.OUTPUT_AUDIO_FORMAT || 'webm',
+          })
+        : uploadedAudioFile
 
       if (!audioFile) {
         return res.status(400).json({ success: false, message: '未提供錄音檔案' })
@@ -127,6 +140,8 @@ router.post(
         sessionId: getDefaultSessionId(),
         mode: 'local',
         skill: 'meeting-transcription',
+        audioConverted: !!audioFile.converted,
+        sourceSegmentCount: audioFile.sourceSegmentCount || 1,
       }
 
       const suggestedPrompt = buildOpenClawPrompt({
