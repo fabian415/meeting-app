@@ -73,12 +73,14 @@ function buildAudioPath(remoteName) {
   return `${normalizedRemoteDir.replace(/\/+$/, '') || '/'}${normalizedRemoteDir === '/' ? '' : '/'}${remoteName}`
 }
 
-function buildOpenClawPrompt({ audioPath, notifyEmail, meetingTitle }) {
+function buildOpenClawPrompt({ audioPath, metadataPath, metadataContent, notifyEmail }) {
   return [
     '我已經上傳完音檔。',
     `音檔位置：${audioPath}`,
     `音檔檔名：${audioPath.split('/').pop()}`,
-    `會議名稱：${meetingTitle || '未命名會議'}`,
+    '以下是會議資訊，請一併作為轉錄與整理會議紀錄的上下文：',
+    metadataContent,
+    '',
     '請透過本地模式進行轉錄。',
     '請使用 meeting-transcription 的 skill。',
     `完成後請發信給 ${notifyEmail}。`,
@@ -115,6 +117,7 @@ router.post(
       const audioExt = getAudioExtension(audioFile)
       const baseName = `${safeTitle}_${timestamp}`
       const audioRemoteName = `${baseName}.${audioExt}`
+      const metadataRemoteName = `${baseName}_meta.md`
 
       const metaContent = buildMetadata({
         meetingTitle: rawTitle,
@@ -125,17 +128,21 @@ router.post(
 
       const filesToUpload = [
         { buffer: audioFile.buffer, remoteName: audioRemoteName },
-        { buffer: Buffer.from(metaContent, 'utf-8'), remoteName: `${baseName}_meta.md` },
+        { buffer: Buffer.from(metaContent, 'utf-8'), remoteName: metadataRemoteName },
       ]
 
       const uploadResult = await uploadFilesToFTP(filesToUpload)
       const audioPath = buildAudioPath(audioRemoteName)
+      const metadataPath = buildAudioPath(metadataRemoteName)
       const notifyEmail = req.body.notifyEmail || process.env.OPENCLAW_NOTIFY_EMAIL || 'fabian.chung@advantech.com.tw'
       const conversationContext = {
         meetingTitle: rawTitle,
         uploadedAt: now.toISOString(),
         audioFileName: audioRemoteName,
         audioPath,
+        metadataFileName: metadataRemoteName,
+        metadataPath,
+        metadataContent: metaContent,
         notifyEmail,
         sessionId: getDefaultSessionId(),
         mode: 'local',
@@ -146,8 +153,9 @@ router.post(
 
       const suggestedPrompt = buildOpenClawPrompt({
         audioPath,
+        metadataPath,
+        metadataContent: metaContent,
         notifyEmail,
-        meetingTitle: rawTitle,
       })
 
       return res.json({
