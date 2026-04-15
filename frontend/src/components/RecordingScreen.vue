@@ -22,8 +22,10 @@ const audioLevel = ref(0)
 const waveHeights = ref(Array(9).fill(8))
 const hasRecoverableDraft = ref(false)
 const isLoadingDraft = ref(false)
+const isFinishingDraft = ref(false)
 const draftChunkCount = ref(0)
 const draftUpdatedAt = ref('')
+const confirmation = ref(null)
 
 let mediaRecorder = null
 let audioChunks = []
@@ -330,7 +332,9 @@ function stopRecording() {
 }
 
 async function finishRecoveredDraft() {
-  if (!canUseRecordingDraftStore()) return
+  if (!canUseRecordingDraftStore() || isFinishingDraft.value) return
+
+  isFinishingDraft.value = true
 
   try {
     const draft = await getRecordingDraft()
@@ -354,7 +358,41 @@ async function finishRecoveredDraft() {
     emit('toast', { type: 'success', message: `已恢復錄音，共 ${formattedTime.value}` })
   } catch (error) {
     emit('toast', { type: 'error', message: `無法恢復錄音：${error.message}` })
+  } finally {
+    isFinishingDraft.value = false
   }
+}
+
+function requestConfirmation(options) {
+  confirmation.value = options
+}
+
+function closeConfirmation() {
+  confirmation.value = null
+}
+
+async function confirmAction() {
+  const action = confirmation.value?.action
+  closeConfirmation()
+  await action?.()
+}
+
+function requestRestartRecording() {
+  requestConfirmation({
+    title: '重新錄製？',
+    message: '目前完成的錄音會被清除，並從 00:00 開始重新錄製。',
+    confirmLabel: '確認重新錄製',
+    action: () => startRecording(),
+  })
+}
+
+function requestDiscardRecording() {
+  requestConfirmation({
+    title: hasRecoverableDraft.value && !hasRecording.value ? '捨棄暫存錄音？' : '捨棄這段錄音？',
+    message: '這個動作會清除目前保存的錄音片段，完成後無法復原。',
+    confirmLabel: '確認捨棄',
+    action: () => discardRecording(),
+  })
 }
 
 async function discardRecording() {
@@ -610,15 +648,15 @@ onMounted(() => {
           </template>
 
           <template v-if="!isRecording && !hasRecording && hasRecoverableDraft">
-            <button class="btn-primary relative z-10" type="button" @click="startRecording({ resume: true })">
+            <button class="btn-primary relative z-10" type="button" :disabled="isFinishingDraft" @click="startRecording({ resume: true })">
               <span class="text-xl">●</span>
               繼續錄製
             </button>
-            <button class="btn-primary btn-secondary relative z-10" type="button" @click="finishRecoveredDraft">
+            <button class="btn-primary btn-secondary relative z-10" type="button" :disabled="isFinishingDraft" @click="finishRecoveredDraft">
               <span>■</span>
-              直接完成並合併
+              {{ isFinishingDraft ? '正在合併...' : '直接完成並合併' }}
             </button>
-            <button class="relative z-10 py-2 text-center text-sm text-red-400" type="button" @click="discardRecording">
+            <button class="relative z-10 py-2 text-center text-sm text-red-400 disabled:opacity-40" type="button" :disabled="isFinishingDraft" @click="requestDiscardRecording">
               捨棄暫存錄音
             </button>
           </template>
@@ -641,16 +679,36 @@ onMounted(() => {
               <span class="text-xl">↑</span>
               前往上傳
             </button>
-            <button class="btn-primary btn-secondary relative z-10" type="button" @click="startRecording()">
+            <button class="btn-primary btn-secondary relative z-10" type="button" @click="requestRestartRecording">
               <span>↻</span>
               重新錄音
             </button>
-            <button class="relative z-10 py-2 text-center text-sm text-red-400" type="button" @click="discardRecording">
+            <button class="relative z-10 py-2 text-center text-sm text-red-400" type="button" @click="requestDiscardRecording">
               捨棄這段錄音
             </button>
           </template>
         </div>
       </div>
+      </div>
+    </div>
+
+    <div
+      v-if="confirmation"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-5 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div class="w-full max-w-sm rounded-lg border border-white/10 bg-slate-950 p-5 shadow-2xl">
+        <h2 class="text-lg font-semibold text-white">{{ confirmation.title }}</h2>
+        <p class="mt-2 text-sm leading-6 text-slate-300">{{ confirmation.message }}</p>
+        <div class="mt-5 grid grid-cols-2 gap-3">
+          <button class="btn-primary btn-secondary btn-block" type="button" @click="closeConfirmation">
+            取消
+          </button>
+          <button class="btn-primary btn-danger btn-block" type="button" @click="confirmAction">
+            {{ confirmation.confirmLabel }}
+          </button>
+        </div>
       </div>
     </div>
   </div>
