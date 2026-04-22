@@ -1,11 +1,17 @@
-﻿import { randomUUID } from 'node:crypto'
+﻿import { createPrivateKey, createPublicKey, randomUUID, sign as signPayload } from 'node:crypto'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 
 const PROTOCOL_VERSION = 3
 const DEFAULT_HISTORY_LIMIT = 100
 const POLL_INTERVAL_MS = 1200
 const DEFAULT_WAIT_TIMEOUT_MS = 45000
+const CONNECT_CHALLENGE_TIMEOUT_MS = 3000
 const DEFAULT_AGENT_ID = (process.env.OPENCLAW_DEFAULT_AGENT_ID || 'main').trim()
 const DEFAULT_NEW_SESSION_COMMAND = (process.env.OPENCLAW_NEW_SESSION_COMMAND || '/new').trim()
+const DEFAULT_DEVICE_IDENTITY_PATH = path.join(os.homedir(), '.openclaw', 'identity', 'device.json')
+const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex')
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -30,29 +36,174 @@ function buildGatewayUrl() {
   return `ws://${rawUrl}`
 }
 
-function buildConnectParams() {
-  const auth = {}
+function base64UrlEncode(buf) {
+  return buf.toString('base64').replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/g, '')
+}
+
+function derivePublicKeyRaw(publicKeyPem) {
+  const key = createPublicKey(publicKeyPem)
+  const spki = key.export({ type: 'spki', format: 'der' })
+  if (
+    Buffer.isBuffer(spki)
+    && spki.length === ED25519_SPKI_PREFIX.length + 32
+    && spki.subarray(0, ED25519_SPKI_PREFIX.length).equals(ED25519_SPKI_PREFIX)
+  ) {
+    return spki.subarray(ED25519_SPKI_PREFIX.length)
+  }
+  return Buffer.from(spki)
+}
+
+function publicKeyRawBase64UrlFromPem(publicKeyPem) {
+  return base64UrlEncode(derivePublicKeyRaw(publicKeyPem))
+}
+
+function signDevicePayload(privateKeyPem, payload) {
+  const key = createPrivateKey(privateKeyPem)
+  const signature = signPayload(null, Buffer.from(payload, 'utf8'), key)
+  return base64UrlEncode(signature)
+}
+
+function normalizeDeviceMetadataForAuth(value) {
+  return typeof value === 'string' && value.trim() ? value.trim().toLowerCase() : ''
+}
+
+function buildDeviceAuthPayloadV3({ deviceId, clientId, clientMode, role, scopes, signedAtMs, token = null, nonce, platform, deviceFamily }) {
+  return [
+    'v3',
+    deviceId,
+    clientId,
+    clientMode,
+    role,
+    scopes.join(','),
+    String(signedAtMs),
+    token ?? '',
+    nonce,
+    normalizeDeviceMetadataForAuth(platform),
+    normalizeDeviceMetadataForAuth(deviceFamily),
+  ].join('|')
+}
+
+function loadDeviceIdentity() {
+  const identityPath = (process.env.OPENCLAW_GATEWAY_DEVICE_IDENTITY_PATH || DEFAULT_DEVICE_IDENTITY_PATH).trim()
+  if (!identityPath) return null
+
+  try {
+    const raw = fs.readFileSync(identityPath, 'utf8')
+    const parsed = JSON.parse(raw)
+    if (
+      typeof parsed?.deviceId === 'string'
+      && typeof parsed?.publicKeyPem === 'string'
+      && typeof parsed?.privateKeyPem === 'string'
+    ) {
+      return {
+        path: identityPath,
+        deviceId: parsed.deviceId,
+        publicKeyPem: parsed.publicKeyPem,
+        privateKeyPem: parsed.privateKeyPem,
+      }
+    }
+  } catch {}
+
+  return null
+}
+
+function resolveRequestedScopes() {
+  const configuredScopes = (process.env.OPENCLAW_GATEWAY_SCOPES || '')
+    .split(',')
+    .map(scope => scope.trim())
+    .filter(Boolean)
+
+  if (configuredScopes.length > 0) return configuredScopes
+  if (loadDeviceIdentity()) return ['operator.read', 'operator.write']
+  return []
+}
+
+function resolveGatewayAuth() {
   const token = process.env.OPENCLAW_GATEWAY_TOKEN?.trim()
   const password = process.env.OPENCLAW_GATEWAY_PASSWORD?.trim()
+  const deviceToken = process.env.OPENCLAW_GATEWAY_DEVICE_TOKEN?.trim()
 
-  if (token) auth.token = token
-  if (password) auth.password = password
+  if (deviceToken) {
+    return {
+      auth: { deviceToken },
+      signatureToken: deviceToken,
+      authMode: 'device-token',
+    }
+  }
+
+  if (token) {
+    return {
+      auth: { token },
+      signatureToken: token,
+      authMode: 'token',
+    }
+  }
+
+  if (password) {
+    return {
+      auth: { password },
+      signatureToken: null,
+      authMode: 'password',
+    }
+  }
 
   return {
+    auth: {},
+    signatureToken: null,
+    authMode: 'none',
+  }
+}
+
+function buildConnectParams({ nonce = null } = {}) {
+  const { auth, signatureToken } = resolveGatewayAuth()
+  const identity = loadDeviceIdentity()
+  const scopes = resolveRequestedScopes()
+  const client = {
+    id: 'cli',
+    version: '1.0.0',
+    platform: process.platform === 'win32' ? 'windows' : process.platform,
+    mode: 'cli',
+  }
+
+  const params = {
     minProtocol: PROTOCOL_VERSION,
     maxProtocol: PROTOCOL_VERSION,
-    client: {
-      id: 'cli',
-      version: '1.0.0',
-      platform: process.platform === 'win32' ? 'windows' : process.platform,
-      mode: 'cli',
-    },
+    client,
     role: 'operator',
-    scopes: ['operator.read', 'operator.write'],
     auth,
     locale: 'zh-TW',
     userAgent: 'meeting-recorder-app/1.0.0',
   }
+
+  if (scopes.length > 0) {
+    params.scopes = scopes
+  }
+
+  if (nonce && identity) {
+    const signedAtMs = Date.now()
+    const payload = buildDeviceAuthPayloadV3({
+      deviceId: identity.deviceId,
+      clientId: client.id,
+      clientMode: client.mode,
+      role: 'operator',
+      scopes,
+      signedAtMs,
+      token: signatureToken,
+      nonce,
+      platform: client.platform,
+      deviceFamily: null,
+    })
+
+    params.device = {
+      id: identity.deviceId,
+      publicKey: publicKeyRawBase64UrlFromPem(identity.publicKeyPem),
+      signature: signDevicePayload(identity.privateKeyPem, payload),
+      signedAt: signedAtMs,
+      nonce,
+    }
+  }
+
+  return params
 }
 
 function pickText(value) {
@@ -254,6 +405,7 @@ class OpenClawGatewayClient {
     this.connectPromise = null
     this.pending = new Map()
     this.isReady = false
+    this.grantedScopes = []
   }
 
   async ensureConnected() {
@@ -275,12 +427,14 @@ class OpenClawGatewayClient {
       const ws = new WebSocket(url)
       const connectId = randomUUID()
       let settled = false
-      let challengeReceived = false
+      let connectNonce = null
+      let challengeTimer = null
 
       const cleanup = () => {
         ws.removeEventListener('message', onMessage)
         ws.removeEventListener('close', onClose)
         ws.removeEventListener('error', onError)
+        if (challengeTimer) clearTimeout(challengeTimer)
       }
 
       const fail = (error) => {
@@ -302,11 +456,16 @@ class OpenClawGatewayClient {
       }
 
       const sendConnect = () => {
+        if (!connectNonce) {
+          fail(new Error('OpenClaw Gateway connect challenge missing nonce'))
+          return
+        }
+
         ws.send(JSON.stringify({
           type: 'req',
           id: connectId,
           method: 'connect',
-          params: buildConnectParams(),
+          params: buildConnectParams({ nonce: connectNonce }),
         }))
       }
 
@@ -319,13 +478,20 @@ class OpenClawGatewayClient {
         }
 
         if (packet?.type === 'event' && packet?.event === 'connect.challenge') {
-          challengeReceived = true
+          connectNonce = typeof packet?.payload?.nonce === 'string' && packet.payload.nonce.trim()
+            ? packet.payload.nonce.trim()
+            : null
           sendConnect()
           return
         }
 
         if (packet?.type === 'res' && packet?.id === connectId) {
-          if (packet.ok) succeed()
+          if (packet.ok) {
+            this.grantedScopes = Array.isArray(packet?.payload?.auth?.scopes)
+              ? packet.payload.auth.scopes.filter(scope => typeof scope === 'string' && scope.trim())
+              : []
+            succeed()
+          }
           else fail(new Error(packet?.error?.message || 'OpenClaw Gateway connect failed'))
         }
       }
@@ -337,9 +503,9 @@ class OpenClawGatewayClient {
       ws.addEventListener('close', onClose)
       ws.addEventListener('error', onError)
       ws.addEventListener('open', () => {
-        setTimeout(() => {
-          if (!settled && !challengeReceived) sendConnect()
-        }, 300)
+        challengeTimer = setTimeout(() => {
+          if (!settled) fail(new Error('OpenClaw Gateway connect challenge timed out'))
+        }, CONNECT_CHALLENGE_TIMEOUT_MS)
       }, { once: true })
     })
   }
@@ -373,6 +539,7 @@ class OpenClawGatewayClient {
         pending.reject(new Error('OpenClaw Gateway connection closed'))
       }
       this.pending.clear()
+      this.grantedScopes = []
     })
 
     ws.addEventListener('error', () => {
@@ -404,6 +571,19 @@ class OpenClawGatewayClient {
 
 const gatewayClient = new OpenClawGatewayClient()
 
+function ensureGrantedScope(scope, method) {
+  if (gatewayClient.grantedScopes.includes(scope)) return
+
+  const grantedText = gatewayClient.grantedScopes.length > 0
+    ? gatewayClient.grantedScopes.join(', ')
+    : 'none'
+
+  throw new Error(
+    `${method} requires ${scope}, but the gateway granted scopes: ${grantedText}. ` +
+    'This usually means the backend connected with a shared token but without an approved device identity/device token.',
+  )
+}
+
 export async function probeOpenClawGateway() {
   await gatewayClient.ensureConnected()
 
@@ -421,9 +601,11 @@ export async function probeOpenClawGateway() {
     success: true,
     connected: true,
     gatewayUrl: buildGatewayUrl(),
-    authMode: process.env.OPENCLAW_GATEWAY_TOKEN?.trim()
-      ? 'token'
-      : process.env.OPENCLAW_GATEWAY_PASSWORD?.trim()
+    authMode: process.env.OPENCLAW_GATEWAY_DEVICE_TOKEN?.trim()
+      ? 'device-token'
+      : process.env.OPENCLAW_GATEWAY_TOKEN?.trim()
+        ? 'token'
+        : process.env.OPENCLAW_GATEWAY_PASSWORD?.trim()
         ? 'password'
         : 'none',
     defaultSessionId: getDefaultSessionId(),
@@ -434,6 +616,8 @@ export async function probeOpenClawGateway() {
 
 export async function getOpenClawHistory({ sessionId, limit = DEFAULT_HISTORY_LIMIT }) {
   if (!sessionId) throw new Error('sessionId is required')
+  await gatewayClient.ensureConnected()
+  ensureGrantedScope('operator.read', 'chat.history')
 
   const payload = await gatewayClient.call('chat.history', {
     sessionKey: sessionId,
@@ -466,6 +650,8 @@ async function waitForConversationUpdate({ sessionId, previousMessages, timeoutM
 export async function sendOpenClawMessage({ message, sessionId = null, context = {} }) {
   const effectiveSessionId = sessionId || context.sessionId || getDefaultSessionId()
   const previousMessages = await getOpenClawHistory({ sessionId: effectiveSessionId }).catch(() => [])
+  await gatewayClient.ensureConnected()
+  ensureGrantedScope('operator.write', 'chat.send')
 
   await gatewayClient.call('chat.send', {
     sessionKey: effectiveSessionId,
