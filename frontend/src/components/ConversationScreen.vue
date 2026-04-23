@@ -259,13 +259,18 @@ async function refreshHistory() {
   if (loadingHistory.value) return
 
   const requestedSessionId = store.openclawSessionId
+  if (!requestedSessionId) return
+
   loadingHistory.value = true
   try {
     const result = await getOpenClawHistory(requestedSessionId)
     if (requestedSessionId && store.openclawSessionId !== requestedSessionId) return
 
     if (result.sessionId) {
-      store.openclawSessionId = result.sessionId
+      store.setOpenClawSession({
+        sessionId: result.sessionId,
+        context: store.conversationContext || { sessionId: result.sessionId },
+      })
     }
     const nextMessages = visibleMessages(result.messages || [])
     const nextSignature = buildSignature(nextMessages)
@@ -291,7 +296,7 @@ async function startNewSession() {
 
   startingSession.value = true
   draft.value = ''
-  store.conversationDraft = ''
+  store.setConversationDraft('')
 
   try {
     const result = await startNewOpenClawSession({
@@ -299,8 +304,10 @@ async function startNewSession() {
       context: store.conversationContext || {},
     })
 
-    store.openclawSessionId = result.sessionId || null
-    store.conversationContext = result.context || { sessionId: result.sessionId || null }
+    store.setOpenClawSession({
+      sessionId: result.sessionId || null,
+      context: result.context || { sessionId: result.sessionId || null },
+    })
     await applyMessages([], { smoothScroll: false })
     emit('toast', { type: 'success', message: '已開啟新的 OpenClaw session' })
   } catch (error) {
@@ -321,7 +328,7 @@ async function sendMessage() {
   const optimisticMessages = [...store.conversationMessages, { role: 'user', content: message }]
   await applyMessages(optimisticMessages)
   draft.value = ''
-  store.conversationDraft = ''
+  store.setConversationDraft('')
 
   try {
     const result = await chatWithOpenClaw({
@@ -331,7 +338,10 @@ async function sendMessage() {
     })
 
     if (result.sessionId) {
-      store.openclawSessionId = result.sessionId
+      store.setOpenClawSession({
+        sessionId: result.sessionId,
+        context: store.conversationContext || { sessionId: result.sessionId },
+      })
     }
 
     const nextMessages = result.messages || optimisticMessages
@@ -359,16 +369,19 @@ async function finalizeImport() {
 
   try {
     const result = await finalizeProperNounImport(outputRemotePath)
-    store.conversationContext = {
-      ...(store.conversationContext || {}),
-      importCompleted: true,
-      importSummary: {
-        extractedCount: result.extractedCount || 0,
-        addedCount: result.addedCount || 0,
-        updatedCount: result.updatedCount || 0,
-        skippedCount: result.skippedCount || 0,
+    store.setOpenClawSession({
+      sessionId: store.openclawSessionId,
+      context: {
+        ...(store.conversationContext || {}),
+        importCompleted: true,
+        importSummary: {
+          extractedCount: result.extractedCount || 0,
+          addedCount: result.addedCount || 0,
+          updatedCount: result.updatedCount || 0,
+          skippedCount: result.skippedCount || 0,
+        },
       },
-    }
+    })
     emit('toast', {
       type: 'success',
       message: `匯入完成，新增 ${result.addedCount || 0} 筆、更新 ${result.updatedCount || 0} 筆`,
@@ -441,7 +454,7 @@ const canFinalizeProperNounImport = computed(() => {
 })
 
 watch(draft, (value) => {
-  store.conversationDraft = value
+  store.setConversationDraft(value)
 })
 
 onUnmounted(() => {

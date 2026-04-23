@@ -1,5 +1,5 @@
 ﻿<script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useMeetingStore } from './stores/meeting.js'
 import RecordingScreen from './components/RecordingScreen.vue'
 import DirectUploadScreen from './components/DirectUploadScreen.vue'
@@ -13,8 +13,13 @@ const store = useMeetingStore()
 const toasts = ref([])
 const menuOpen = ref(false)
 const activePage = ref('meeting')
+const openclawUnreadCount = ref(0)
 
 let toastId = 0
+let titleBlinkHandle = null
+let titleBlinkOn = false
+
+const baseDocumentTitle = '會議室小助手'
 
 function showToast({ type, message }) {
   const id = ++toastId
@@ -27,6 +32,9 @@ function showToast({ type, message }) {
 function navigate(page) {
   activePage.value = page
   menuOpen.value = false
+  if (page === 'openclaw') {
+    clearOpenclawTabNotice()
+  }
 }
 
 function openRecordingFlow() {
@@ -60,10 +68,115 @@ const currentComponent = computed(() => {
 
 const showStepIndicator = computed(() => activePage.value === 'meeting' && !['conversation', 'file-select'].includes(store.currentView))
 
+function messageIdentity(message, index) {
+  return message?.id || [
+    message?.role || '',
+    message?.content || '',
+    Boolean(message?.isThought),
+    Boolean(message?.isProcess),
+    index,
+  ].join(':')
+}
+
+function assistantReplyKeys(messages) {
+  return new Set((messages || [])
+    .map((message, index) => ({ message, index }))
+    .filter(({ message }) => (
+      message?.role === 'assistant'
+      && !message?.isThought
+      && !message?.isProcess
+      && typeof message?.content === 'string'
+      && message.content.trim()
+    ))
+    .map(({ message, index }) => messageIdentity(message, index)))
+}
+
+function shouldShowOpenclawTabNotice() {
+  return activePage.value !== 'openclaw' || document.visibilityState === 'hidden'
+}
+
+function updateDocumentTitle() {
+  if (!openclawUnreadCount.value) {
+    document.title = baseDocumentTitle
+    return
+  }
+
+  const countLabel = openclawUnreadCount.value > 9 ? '9+' : String(openclawUnreadCount.value)
+  document.title = titleBlinkOn
+    ? `(${countLabel}) OpenClaw 新訊息`
+    : baseDocumentTitle
+}
+
+function startTitleBlink() {
+  if (titleBlinkHandle || !openclawUnreadCount.value) return
+
+  titleBlinkOn = true
+  updateDocumentTitle()
+  titleBlinkHandle = window.setInterval(() => {
+    titleBlinkOn = !titleBlinkOn
+    updateDocumentTitle()
+  }, 1200)
+}
+
+function stopTitleBlink() {
+  if (titleBlinkHandle) {
+    window.clearInterval(titleBlinkHandle)
+    titleBlinkHandle = null
+  }
+  titleBlinkOn = false
+}
+
+function clearOpenclawTabNotice() {
+  openclawUnreadCount.value = 0
+  stopTitleBlink()
+  updateDocumentTitle()
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'visible' && activePage.value === 'openclaw') {
+    clearOpenclawTabNotice()
+  }
+}
+
 watch(() => store.currentView, (value) => {
   if (value === 'conversation') {
     activePage.value = 'openclaw'
+    clearOpenclawTabNotice()
   }
+})
+
+watch(() => activePage.value, (value) => {
+  if (value === 'openclaw' && document.visibilityState === 'visible') {
+    clearOpenclawTabNotice()
+  }
+})
+
+watch(() => store.conversationMessages, (messages, previousMessages) => {
+  const previousAssistantKeys = assistantReplyKeys(previousMessages)
+  const newAssistantReplyCount = [...assistantReplyKeys(messages)]
+    .filter(key => !previousAssistantKeys.has(key))
+    .length
+
+  if (!newAssistantReplyCount) return
+
+  if (shouldShowOpenclawTabNotice()) {
+    openclawUnreadCount.value += newAssistantReplyCount
+    startTitleBlink()
+    updateDocumentTitle()
+    return
+  }
+
+  clearOpenclawTabNotice()
+}, { deep: false })
+
+onMounted(() => {
+  document.title = baseDocumentTitle
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+})
+
+onUnmounted(() => {
+  stopTitleBlink()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>
 
@@ -170,7 +283,7 @@ watch(() => store.currentView, (value) => {
           <button
             type="button"
             @click="navigate('openclaw')"
-            class="flex items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors"
+            class="relative flex items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors"
             :class="activePage === 'openclaw' ? 'bg-blue-500/20 text-blue-300' : 'text-white/70 hover:bg-white/10'"
           >
             <span class="text-xl">✦</span>
@@ -178,6 +291,12 @@ watch(() => store.currentView, (value) => {
               <p class="text-sm font-medium leading-tight">OpenClaw 對話</p>
               <p class="mt-0.5 text-xs opacity-50">查看整理結果並繼續提問</p>
             </div>
+            <span
+              v-if="openclawUnreadCount"
+              class="ml-auto rounded-full bg-cyan-300 px-2 py-0.5 text-xs font-semibold text-slate-950 shadow-lg shadow-cyan-500/20"
+            >
+              {{ openclawUnreadCount > 9 ? '9+' : openclawUnreadCount }}
+            </span>
           </button>
         </nav>
       </aside>
