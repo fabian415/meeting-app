@@ -84,6 +84,7 @@ function buildOpenClawPrompt({ audioPath, metadataPath, metadataContent, notifyE
     '請透過本地模式進行轉錄。',
     '請使用 meeting-transcription 的 skill。',
     `完成後請發信給 ${notifyEmail}。`,
+    '這個過程可能會很久，請每十分鐘回覆我進度，請用job_id來追蹤轉錄的狀況。',
   ].join('\n')
 }
 

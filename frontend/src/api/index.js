@@ -64,6 +64,14 @@ export async function chatWithOpenClaw({ message, sessionId = null, context = {}
   return res.data
 }
 
+export async function startNewOpenClawSession({ scope = 'meeting', context = {} } = {}) {
+  const res = await api.post('/openclaw/session', {
+    scope,
+    context,
+  })
+  return res.data
+}
+
 export async function getOpenClawHistory(sessionId = null) {
   const res = await api.get('/openclaw/history', {
     params: sessionId ? { sessionId } : {},

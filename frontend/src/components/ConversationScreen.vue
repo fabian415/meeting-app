@@ -1,7 +1,7 @@
 ﻿<script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useMeetingStore } from '../stores/meeting.js'
-import { chatWithOpenClaw, finalizeProperNounImport, getOpenClawHistory } from '../api/index.js'
+import { chatWithOpenClaw, finalizeProperNounImport, getOpenClawHistory, startNewOpenClawSession } from '../api/index.js'
 
 const emit = defineEmits(['toast'])
 const store = useMeetingStore()
@@ -41,12 +41,50 @@ function buildSignature(messages) {
   ]))
 }
 
+function isInternalOpenClawNotice(message) {
+  const content = typeof message?.content === 'string' ? message.content.trim() : ''
+  if (!content) return false
+
+  return (
+    message?.isInternalNotice
+    || /^System(?:\s*\([^)]*\))?:/i.test(content)
+    || /^An async command you ran earlier has completed\./i.test(content)
+    || content.includes('Do not relay it to the user unless explicitly requested.')
+  )
+}
+
+function normalizeMessageContent(message) {
+  return typeof message?.content === 'string' ? message.content.trim().replace(/\s+/g, ' ') : ''
+}
+
+function removeDuplicateConsecutiveUserMessages(messages) {
+  const result = []
+
+  for (const message of messages) {
+    const previous = result[result.length - 1]
+    const isDuplicateUserMessage = (
+      message?.role === 'user'
+      && previous?.role === 'user'
+      && normalizeMessageContent(message) === normalizeMessageContent(previous)
+    )
+
+    if (!isDuplicateUserMessage) {
+      result.push(message)
+    }
+  }
+
+  return result
+}
+
 function visibleMessages(messages) {
   const hiddenIds = new Set(store.conversationContext?.hiddenMessageIds || [])
-  return (messages || []).filter(message => {
+  const filteredMessages = (messages || []).filter(message => {
+    if (isInternalOpenClawNotice(message)) return false
     if (!message?.id) return true
     return !hiddenIds.has(message.id)
   })
+
+  return removeDuplicateConsecutiveUserMessages(filteredMessages)
 }
 
 const conversationItems = computed(() => {
@@ -219,9 +257,12 @@ async function applyMessages(nextMessages, { smoothScroll = true } = {}) {
 async function refreshHistory() {
   if (loadingHistory.value) return
 
+  const requestedSessionId = store.openclawSessionId
   loadingHistory.value = true
   try {
-    const result = await getOpenClawHistory(store.openclawSessionId)
+    const result = await getOpenClawHistory(requestedSessionId)
+    if (requestedSessionId && store.openclawSessionId !== requestedSessionId) return
+
     if (result.sessionId) {
       store.openclawSessionId = result.sessionId
     }
@@ -238,15 +279,53 @@ async function refreshHistory() {
   }
 }
 
+function resolveNewSessionScope() {
+  const skill = store.conversationContext?.skill
+  if (skill === 'meeting-proper-noun-extractor') return 'proper-noun-import'
+  return 'meeting'
+}
+
+async function startNewSession() {
+  if (sending.value) return
+
+  sending.value = true
+  draft.value = ''
+  store.conversationDraft = ''
+
+  try {
+    const result = await startNewOpenClawSession({
+      scope: resolveNewSessionScope(),
+      context: store.conversationContext || {},
+    })
+
+    store.openclawSessionId = result.sessionId || null
+    store.conversationContext = result.context || { sessionId: result.sessionId || null }
+    await applyMessages([], { smoothScroll: false })
+    emit('toast', { type: 'success', message: '已開啟新的 OpenClaw session' })
+  } catch (error) {
+    emit('toast', {
+      type: 'error',
+      message: error.response?.data?.message || '無法開啟新的 OpenClaw session',
+    })
+  } finally {
+    sending.value = false
+  }
+}
+
 async function sendMessage() {
   const message = draft.value.trim()
   if (!message || sending.value) return
 
+  if (message === '/new') {
+    await startNewSession()
+    return
+  }
+
+  sending.value = true
   const optimisticMessages = [...store.conversationMessages, { role: 'user', content: message }]
   await applyMessages(optimisticMessages)
   draft.value = ''
   store.conversationDraft = ''
-  sending.value = true
 
   try {
     const result = await chatWithOpenClaw({

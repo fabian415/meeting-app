@@ -13,6 +13,12 @@ const DEFAULT_NEW_SESSION_COMMAND = (process.env.OPENCLAW_NEW_SESSION_COMMAND ||
 const DEFAULT_DEVICE_IDENTITY_PATH = path.join(os.homedir(), '.openclaw', 'identity', 'device.json')
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex')
 
+function resolveClientPlatform() {
+  const configuredPlatform = process.env.OPENCLAW_GATEWAY_CLIENT_PLATFORM?.trim()
+  if (configuredPlatform) return configuredPlatform
+  return process.platform === 'win32' ? 'windows' : process.platform
+}
+
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -83,8 +89,72 @@ function buildDeviceAuthPayloadV3({ deviceId, clientId, clientMode, role, scopes
   ].join('|')
 }
 
+function resolveDeviceIdentityPath() {
+  return (process.env.OPENCLAW_GATEWAY_DEVICE_IDENTITY_PATH || DEFAULT_DEVICE_IDENTITY_PATH).trim()
+}
+
+function getDeviceIdentityStatus() {
+  const identityPath = resolveDeviceIdentityPath()
+  if (!identityPath) {
+    return {
+      configured: false,
+      exists: false,
+      valid: false,
+      path: '',
+      error: 'OPENCLAW_GATEWAY_DEVICE_IDENTITY_PATH is empty',
+    }
+  }
+
+  try {
+    const raw = fs.readFileSync(identityPath, 'utf8')
+    const parsed = JSON.parse(raw)
+    const valid = (
+      typeof parsed?.deviceId === 'string'
+      && typeof parsed?.publicKeyPem === 'string'
+      && typeof parsed?.privateKeyPem === 'string'
+    )
+
+    return {
+      configured: Boolean(process.env.OPENCLAW_GATEWAY_DEVICE_IDENTITY_PATH?.trim()),
+      exists: true,
+      valid,
+      path: identityPath,
+      deviceId: valid ? parsed.deviceId : null,
+      error: valid ? null : 'identity file is missing deviceId/publicKeyPem/privateKeyPem',
+    }
+  } catch (error) {
+    return {
+      configured: Boolean(process.env.OPENCLAW_GATEWAY_DEVICE_IDENTITY_PATH?.trim()),
+      exists: false,
+      valid: false,
+      path: identityPath,
+      error: error.message,
+    }
+  }
+}
+
+function buildDeviceIdentityRequiredMessage() {
+  const status = getDeviceIdentityStatus()
+  return (
+    'OpenClaw Gateway requires an approved device identity, but the backend could not load one. ' +
+    `Expected identity file: ${status.path || '(not configured)'}. ` +
+    `Identity status: ${status.exists ? 'found' : 'missing'}, ${status.valid ? 'valid' : 'invalid'}. ` +
+    'Set OPENCLAW_GATEWAY_DEVICE_IDENTITY_PATH to an approved OpenClaw device.json, ' +
+    `or place it at the default path: ${DEFAULT_DEVICE_IDENTITY_PATH}.`
+  )
+}
+
+function assertDeviceIdentityWhenRequired() {
+  if (!process.env.OPENCLAW_GATEWAY_DEVICE_TOKEN?.trim()) return
+
+  const status = getDeviceIdentityStatus()
+  if (!status.valid) {
+    throw new Error(buildDeviceIdentityRequiredMessage())
+  }
+}
+
 function loadDeviceIdentity() {
-  const identityPath = (process.env.OPENCLAW_GATEWAY_DEVICE_IDENTITY_PATH || DEFAULT_DEVICE_IDENTITY_PATH).trim()
+  const identityPath = resolveDeviceIdentityPath()
   if (!identityPath) return null
 
   try {
@@ -155,13 +225,15 @@ function resolveGatewayAuth() {
 }
 
 function buildConnectParams({ nonce = null } = {}) {
+  assertDeviceIdentityWhenRequired()
+
   const { auth, signatureToken } = resolveGatewayAuth()
   const identity = loadDeviceIdentity()
   const scopes = resolveRequestedScopes()
   const client = {
     id: 'cli',
     version: '1.0.0',
-    platform: process.platform === 'win32' ? 'windows' : process.platform,
+    platform: resolveClientPlatform(),
     mode: 'cli',
   }
 
@@ -235,6 +307,19 @@ function pickText(value) {
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : ''
+}
+
+function isInternalOpenClawNoticeContent(content) {
+  if (typeof content !== 'string') return false
+
+  const value = content.trim()
+  if (!value) return false
+
+  return (
+    /^System(?:\s*\([^)]*\))?:/i.test(value)
+    || /^An async command you ran earlier has completed\./i.test(value)
+    || value.includes('Do not relay it to the user unless explicitly requested.')
+  )
 }
 
 function isThoughtEntry(entry) {
@@ -313,7 +398,7 @@ function splitMixedMessage(message) {
   if (message.role !== 'user' && message.role !== 'assistant') return [message]
 
   const lines = message.content.split('\n')
-  if (!lines[0]?.trim().startsWith('System:')) return [message]
+  if (!/^System(?:\s*\([^)]*\))?:/i.test(lines[0]?.trim() || '')) return [message]
 
   const actualMessageStartIndex = lines.findIndex((line, index) => (
     index > 0
@@ -334,11 +419,15 @@ function splitMixedMessage(message) {
       role: 'system',
       content: systemContent,
       isProcess: true,
+      isInternalNotice: true,
     },
     {
       ...message,
       id: `${message.id}-user`,
       content: actualContent,
+      isThought: false,
+      isProcess: false,
+      isInternalNotice: false,
     },
   ]
 }
@@ -350,13 +439,11 @@ function normalizeHistoryPayload(payload) {
 
   return list
     .map((entry, index) => {
-      const role = entry?.role
+      const rawRole = entry?.role
         || entry?.message?.role
         || entry?.author?.role
         || entry?.kind
         || 'assistant'
-      const isThought = isThoughtEntry(entry)
-      const isProcess = isProcessEntry(entry, role)
 
       const content = pickText(
         entry?.content
@@ -367,6 +454,11 @@ function normalizeHistoryPayload(payload) {
         || entry?.displayText,
       )
 
+      const isInternalNotice = isInternalOpenClawNoticeContent(content)
+      const role = rawRole
+      const isThought = isThoughtEntry(entry)
+      const isProcess = isInternalNotice || isProcessEntry(entry, role)
+
       return {
         id: entry?.id || entry?.messageId || `msg-${index}`,
         role,
@@ -374,12 +466,13 @@ function normalizeHistoryPayload(payload) {
         createdAt: entry?.createdAt || entry?.ts || entry?.timestamp || null,
         isThought,
         isProcess,
+        isInternalNotice,
         type: entry?.type || entry?.kind || entry?.message?.type || entry?.message?.kind || null,
         visibility: entry?.visibility || entry?.message?.visibility || entry?.metadata?.visibility || null,
       }
     })
-    .filter(message => message.content)
     .flatMap(splitMixedMessage)
+    .filter(message => message.content && !message.isInternalNotice)
 }
 
 function conversationSignature(messages) {
@@ -608,6 +701,7 @@ export async function probeOpenClawGateway() {
         : process.env.OPENCLAW_GATEWAY_PASSWORD?.trim()
         ? 'password'
         : 'none',
+    deviceIdentity: getDeviceIdentityStatus(),
     defaultSessionId: getDefaultSessionId(),
     health,
     status,

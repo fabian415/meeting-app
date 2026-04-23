@@ -1,5 +1,13 @@
 ﻿import express from 'express'
-import { getDefaultSessionId, getOpenClawHistory, probeOpenClawGateway, sendOpenClawMessage, smokeTestOpenClaw } from '../services/openclawService.js'
+import {
+  createScopedSessionId,
+  getDefaultSessionId,
+  getOpenClawHistory,
+  initializeOpenClawSession,
+  probeOpenClawGateway,
+  sendOpenClawMessage,
+  smokeTestOpenClaw,
+} from '../services/openclawService.js'
 
 const router = express.Router()
 
@@ -63,6 +71,30 @@ router.post('/chat', async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || 'Failed to send message to OpenClaw',
+    })
+  }
+})
+
+router.post('/session', async (req, res) => {
+  try {
+    const { scope = 'meeting', context = {} } = req.body || {}
+    const sessionId = createScopedSessionId(scope)
+    const session = await initializeOpenClawSession({ sessionId })
+
+    return res.json({
+      success: true,
+      sessionId,
+      context: {
+        ...(context && typeof context === 'object' ? context : {}),
+        sessionId,
+        hiddenMessageIds: session.hiddenMessageIds || [],
+      },
+    })
+  } catch (error) {
+    console.error('[Openclaw Session Error]', error.message)
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to start a new OpenClaw session',
     })
   }
 })
