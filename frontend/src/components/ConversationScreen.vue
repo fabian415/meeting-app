@@ -8,6 +8,7 @@ const store = useMeetingStore()
 
 const draft = ref('')
 const sending = ref(false)
+const startingSession = ref(false)
 const finalizingImport = ref(false)
 const loadingHistory = ref(false)
 const pollHandle = ref(null)
@@ -286,9 +287,9 @@ function resolveNewSessionScope() {
 }
 
 async function startNewSession() {
-  if (sending.value) return
+  if (sending.value || startingSession.value) return
 
-  sending.value = true
+  startingSession.value = true
   draft.value = ''
   store.conversationDraft = ''
 
@@ -308,18 +309,13 @@ async function startNewSession() {
       message: error.response?.data?.message || '無法開啟新的 OpenClaw session',
     })
   } finally {
-    sending.value = false
+    startingSession.value = false
   }
 }
 
 async function sendMessage() {
   const message = draft.value.trim()
-  if (!message || sending.value) return
-
-  if (message === '/new') {
-    await startNewSession()
-    return
-  }
+  if (!message || sending.value || startingSession.value) return
 
   sending.value = true
   const optimisticMessages = [...store.conversationMessages, { role: 'user', content: message }]
@@ -397,7 +393,7 @@ function updatePolling() {
 
   const intervalMs = hasPendingAssistantReply.value ? 2500 : 5000
   pollHandle.value = window.setInterval(async () => {
-    if (sending.value) return
+    if (sending.value || startingSession.value) return
     await refreshHistory()
   }, intervalMs)
 }
@@ -440,6 +436,7 @@ const canFinalizeProperNounImport = computed(() => {
     && Boolean(context.outputRemotePath)
     && !context.importCompleted
     && !sending.value
+    && !startingSession.value
   )
 })
 
@@ -551,6 +548,14 @@ onUnmounted(() => {
             >
               {{ finalizingImport ? '匯入中...' : '匯入專有名詞' }}
             </button>
+            <button
+              type="button"
+              class="text-cyan-300 transition-colors hover:text-cyan-100 disabled:opacity-50"
+              :disabled="sending || startingSession"
+              @click="startNewSession"
+            >
+              {{ startingSession ? '開啟中...' : '開新對話' }}
+            </button>
             <button class="text-slate-300 transition-colors hover:text-white" :disabled="loadingHistory" @click="refreshHistory">
               {{ loadingHistory ? '更新中...' : '重新整理' }}
             </button>
@@ -564,7 +569,7 @@ onUnmounted(() => {
           @keydown.enter.exact.prevent="sendMessage"
         ></textarea>
         <div class="mt-2 flex justify-end">
-          <button class="btn-primary btn-block sm:w-auto sm:min-w-36" :disabled="sending || !draft.trim()" @click="sendMessage">
+          <button class="btn-primary btn-block sm:w-auto sm:min-w-36" :disabled="sending || startingSession || !draft.trim()" @click="sendMessage">
             {{ sending ? '傳送中...' : '送出訊息' }}
           </button>
         </div>

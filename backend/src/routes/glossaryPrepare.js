@@ -40,6 +40,7 @@ function buildPrompt({ inputPath, outputPath, originalName }) {
     '請產出 UTF-8 CSV 檔案。',
     '欄位格式固定為：term,count,contexts',
     '完成後請明確回覆輸出檔案已建立。',
+    'term 裡面不可包含特殊字元，如/或,等。',
   ].join('\n')
 }
 

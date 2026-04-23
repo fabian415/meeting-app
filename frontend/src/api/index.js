@@ -124,6 +124,20 @@ export async function deleteProperNoun(term) {
   return res.data
 }
 
+export async function deleteAllProperNouns() {
+  const current = await listProperNouns()
+  const terms = current.terms || []
+
+  for (const term of terms) {
+    await deleteProperNoun(term)
+  }
+
+  return {
+    total: 0,
+    terms: [],
+  }
+}
+
 export async function importProperNounsFromFile(file) {
   const form = new FormData()
   form.append('sourceFile', file, file.name)

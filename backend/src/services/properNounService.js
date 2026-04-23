@@ -75,24 +75,33 @@ export async function upsertProperNouns(inputTerms) {
     const key = term.toLowerCase()
     const existingTerm = existingMap.get(key)
 
-    if (!existingTerm) {
-      await addProperNoun(term)
+    try {
+      if (!existingTerm) {
+        await addProperNoun(term)
+        existingMap.set(key, term)
+        addedCount += 1
+        continue
+      }
+
+      if (existingTerm === term) {
+        skippedCount += 1
+        continue
+      }
+
+      await updateProperNoun(existingTerm, term)
       existingMap.set(key, term)
-      addedCount += 1
-      continue
-    }
-
-    if (existingTerm === term) {
+      updatedCount += 1
+    } catch {
       skippedCount += 1
-      continue
     }
-
-    await updateProperNoun(existingTerm, term)
-    existingMap.set(key, term)
-    updatedCount += 1
   }
 
-  const latest = await listProperNouns()
+  let latest = null
+  try {
+    latest = await listProperNouns()
+  } catch {
+    latest = { terms: [...existingMap.values()] }
+  }
 
   return {
     success: true,

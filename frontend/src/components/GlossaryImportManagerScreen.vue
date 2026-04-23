@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useMeetingStore } from '../stores/meeting.js'
 import {
   addProperNoun,
+  deleteAllProperNouns,
   deleteProperNoun,
   importProperNounsFromFile,
   listProperNouns,
@@ -22,6 +23,7 @@ const editingTerm = ref(null)
 const editValue = ref('')
 const savingTerm = ref(null)
 const deletingTerm = ref(null)
+const deletingAll = ref(false)
 const importing = ref(false)
 const fileInput = ref(null)
 
@@ -124,7 +126,29 @@ async function handleDelete(term) {
   }
 }
 
+async function handleDeleteAll() {
+  if (terms.value.length === 0 || deletingAll.value) return
+
+  const confirmed = window.confirm(`確定要刪除全部 ${terms.value.length} 個專有名詞嗎？此操作無法復原。`)
+  if (!confirmed) return
+
+  deletingAll.value = true
+  try {
+    const data = await deleteAllProperNouns()
+    terms.value = data.terms || []
+    searchQuery.value = ''
+    cancelAdd()
+    cancelEdit()
+    emit('toast', { type: 'success', message: '已刪除全部專有名詞' })
+  } catch (error) {
+    emit('toast', { type: 'error', message: `刪除全部失敗：${error.response?.data?.detail || error.message}` })
+  } finally {
+    deletingAll.value = false
+  }
+}
+
 function openImportPicker() {
+  if (importing.value) return
   fileInput.value?.click()
 }
 
@@ -155,6 +179,29 @@ onMounted(fetchTerms)
 
 <template>
   <div class="flex flex-1 flex-col overflow-hidden lg:px-8 lg:py-8">
+    <Transition name="import-overlay">
+      <div
+        v-if="importing"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-6 backdrop-blur-md"
+        role="status"
+        aria-live="polite"
+        aria-label="Importing glossary file"
+      >
+        <div class="w-full max-w-sm rounded-3xl border border-white/15 bg-slate-900/95 p-7 text-center shadow-2xl shadow-black/40">
+          <div class="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-500/15 text-blue-200 ring-1 ring-blue-300/20">
+            <svg class="h-8 w-8 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+              <path class="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+            </svg>
+          </div>
+          <p class="text-lg font-semibold text-white">正在匯入詞彙檔案</p>
+          <p class="mt-2 text-sm leading-6 text-white/60">
+            系統正在上傳並準備 OpenClaw 處理內容，API 回應後會自動關閉此畫面。
+          </p>
+        </div>
+      </div>
+    </Transition>
+
     <div class="shrink-0 px-4 pb-3 pt-14 sm:px-6 lg:px-0 lg:max-w-5xl lg:pb-6 lg:pt-4">
       <div class="mb-4 flex items-center justify-between gap-3">
         <div>
@@ -187,6 +234,14 @@ onMounted(fetchTerms)
             <svg class="w-4 h-4" :class="{ 'animate-spin': loading }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
+          </button>
+          <button
+            type="button"
+            class="rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-200 transition-colors hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+            :disabled="deletingAll || terms.length === 0"
+            @click="handleDeleteAll"
+          >
+            {{ deletingAll ? '刪除中...' : '全部刪除' }}
           </button>
           <button
             type="button"
@@ -348,5 +403,15 @@ onMounted(fetchTerms)
 .expand-enter-to,
 .expand-leave-from {
   max-height: 200px;
+}
+
+.import-overlay-enter-active,
+.import-overlay-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.import-overlay-enter-from,
+.import-overlay-leave-to {
+  opacity: 0;
 }
 </style>
