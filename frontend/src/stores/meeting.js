@@ -38,6 +38,7 @@ export const useMeetingStore = defineStore('meeting', () => {
   const meetingStartTime = ref(null)
   const meetingEndTime = ref(null)
   const uploadResult = ref(null)
+  const selectedTerms = ref([])
   const conversationMessages = ref(Array.isArray(savedOpenClawState?.messages) ? savedOpenClawState.messages : [])
   const openclawSessionId = ref(savedOpenClawState?.sessionId || null)
   const conversationContext = ref(savedOpenClawState?.context || null)
@@ -83,12 +84,21 @@ export const useMeetingStore = defineStore('meeting', () => {
     meetingStartTime.value = null
     meetingEndTime.value = null
     uploadResult.value = null
+    selectedTerms.value = []
     conversationMessages.value = []
     openclawSessionId.value = null
     conversationContext.value = null
     conversationDraft.value = ''
     persistOpenClawState()
     currentView.value = 'record'
+  }
+
+  function setSelectedTerms(terms = []) {
+    selectedTerms.value = [...new Set(
+      (terms || [])
+        .map(term => String(term || '').trim())
+        .filter(Boolean),
+    )]
   }
 
   function startConversation({ sessionId = null, context = null, initialMessages = [], draft = '' }) {
@@ -131,11 +141,13 @@ export const useMeetingStore = defineStore('meeting', () => {
     meetingStartTime,
     meetingEndTime,
     uploadResult,
+    selectedTerms,
     conversationMessages,
     openclawSessionId,
     conversationContext,
     conversationDraft,
     setAudio,
+    setSelectedTerms,
     reset,
     startConversation,
     replaceConversationMessages,

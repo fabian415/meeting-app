@@ -1,6 +1,5 @@
 import express from 'express'
 import { downloadFileFromFTP, fileExistsOnFTP } from '../services/ftpTransferServiceV2.js'
-import { upsertProperNouns } from '../services/properNounService.js'
 
 const router = express.Router()
 
@@ -50,7 +49,7 @@ function parseTermsFromOutputFile(fileBuffer) {
   const termIndex = headers.indexOf('term')
 
   if (termIndex === -1) {
-    throw new Error('proper noun 輸出檔缺少 term 欄位')
+    throw new Error('proper noun output file must include a term column')
   }
 
   return [...new Set(
@@ -80,14 +79,13 @@ router.post('/finalize-import', async (req, res) => {
 
     const outputBuffer = await downloadFileFromFTP(outputRemotePath)
     const terms = parseTermsFromOutputFile(outputBuffer)
-    const importResult = await upsertProperNouns(terms)
 
     return res.json({
       success: true,
-      message: '專有名詞已匯入資料庫',
+      message: '專有名詞已取得，請選擇要套用到本次轉錄的詞彙',
       outputRemotePath,
       extractedCount: terms.length,
-      ...importResult,
+      terms,
     })
   } catch (error) {
     console.error('[Glossary Finalize Error]', error.message)

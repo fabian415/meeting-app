@@ -4,6 +4,7 @@ import { useMeetingStore } from './stores/meeting.js'
 import RecordingScreen from './components/RecordingScreen.vue'
 import DirectUploadScreen from './components/DirectUploadScreen.vue'
 import UploadScreen from './components/UploadScreen.vue'
+import TermsChoiceScreen from './components/TermsChoiceScreen.vue'
 import ConversationScreen from './components/ConversationScreen.vue'
 import SpeakerScreen from './components/SpeakerScreen.vue'
 import GlossaryScreen from './components/GlossaryImportManagerScreen.vue'
@@ -63,10 +64,14 @@ const currentComponent = computed(() => {
   if (activePage.value === 'glossary') return GlossaryScreen
   if (store.currentView === 'file-select') return DirectUploadScreen
   if (store.currentView === 'upload') return UploadScreen
+  if (store.currentView === 'terms-choice') return TermsChoiceScreen
+  if (store.currentView === 'glossary-import') return GlossaryScreen
   return RecordingScreen
 })
 
 const showStepIndicator = computed(() => activePage.value === 'meeting' && !['conversation', 'file-select'].includes(store.currentView))
+const meetingSteps = ['record', 'upload', 'terms-choice', 'glossary-import']
+const currentStepIndex = computed(() => meetingSteps.indexOf(store.currentView))
 
 function messageIdentity(message, index) {
   return message?.id || [
@@ -142,6 +147,12 @@ watch(() => store.currentView, (value) => {
   if (value === 'conversation') {
     activePage.value = 'openclaw'
     clearOpenclawTabNotice()
+    return
+  }
+
+  if (value === 'terms-choice' || value === 'glossary-import') {
+    activePage.value = 'meeting'
+    menuOpen.value = false
   }
 })
 
@@ -189,12 +200,12 @@ onUnmounted(() => {
 
     <div v-if="showStepIndicator" class="absolute left-0 right-0 top-4 z-10 flex justify-center gap-2">
       <div
-        v-for="(step, i) in ['record', 'upload']"
+        v-for="(step, i) in meetingSteps"
         :key="step"
         class="h-1 rounded-full transition-all duration-500"
         :class="[
           store.currentView === step ? 'w-8 bg-blue-400' : 'w-4',
-          store.currentView === 'upload' && i === 0 ? 'bg-blue-400/50' : 'bg-white/20'
+          i < currentStepIndex ? 'bg-blue-400/50' : 'bg-white/20'
         ]"
       ></div>
     </div>

@@ -1,7 +1,7 @@
 ﻿<script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useMeetingStore } from '../stores/meeting.js'
-import { chatWithOpenClaw, finalizeProperNounImport, getOpenClawHistory, startNewOpenClawSession } from '../api/index.js'
+import { chatWithOpenClaw, finalizeTermExtraction, getOpenClawHistory, startNewOpenClawSession } from '../api/index.js'
 
 const emit = defineEmits(['toast'])
 const store = useMeetingStore()
@@ -368,7 +368,33 @@ async function finalizeImport() {
   finalizingImport.value = true
 
   try {
-    const result = await finalizeProperNounImport(outputRemotePath)
+    const result = await finalizeTermExtraction(outputRemotePath)
+    const extractedTerms = result.terms || []
+    const uploadResult = store.uploadResult || store.conversationContext?.transcriptionUploadResult || null
+
+    if (!uploadResult) {
+      store.setOpenClawSession({
+        sessionId: store.openclawSessionId,
+        context: {
+          ...(store.conversationContext || {}),
+          importCompleted: true,
+          importSummary: {
+            extractedCount: result.extractedCount || 0,
+            selectedCount: extractedTerms.length,
+          },
+          extractedTerms,
+          selectedTerms: extractedTerms,
+        },
+      })
+      emit('toast', {
+        type: 'warning',
+        message: `已取得 ${extractedTerms.length} 個詞彙，但找不到原音檔上傳結果，請回到上傳流程`,
+      })
+      return
+    }
+
+    store.uploadResult = uploadResult
+    store.setSelectedTerms(extractedTerms)
     store.setOpenClawSession({
       sessionId: store.openclawSessionId,
       context: {
@@ -376,20 +402,21 @@ async function finalizeImport() {
         importCompleted: true,
         importSummary: {
           extractedCount: result.extractedCount || 0,
-          addedCount: result.addedCount || 0,
-          updatedCount: result.updatedCount || 0,
-          skippedCount: result.skippedCount || 0,
+          selectedCount: extractedTerms.length,
         },
+        extractedTerms,
+        selectedTerms: extractedTerms,
       },
     })
+    store.currentView = 'glossary-import'
     emit('toast', {
       type: 'success',
-      message: `匯入完成，新增 ${result.addedCount || 0} 筆、更新 ${result.updatedCount || 0} 筆`,
+      message: `已取得 ${result.extractedCount || 0} 個詞彙，請確認、修改或刪除後再開始轉錄`,
     })
   } catch (error) {
     emit('toast', {
       type: 'error',
-      message: error.response?.data?.message || '匯入專有名詞失敗',
+      message: error.response?.data?.message || '取得專有名詞失敗',
     })
   } finally {
     finalizingImport.value = false
@@ -455,6 +482,13 @@ const canFinalizeProperNounImport = computed(() => {
 
 watch(draft, (value) => {
   store.setConversationDraft(value)
+})
+
+watch(() => store.conversationDraft, (value) => {
+  const nextDraft = value || ''
+  if (nextDraft !== draft.value) {
+    draft.value = nextDraft
+  }
 })
 
 onUnmounted(() => {
@@ -551,7 +585,7 @@ onUnmounted(() => {
           <span>{{ store.conversationContext?.skill || 'meeting-transcription' }}</span>
           <div class="flex items-center gap-3">
             <span v-if="store.conversationContext?.importCompleted" class="text-emerald-300">
-              已匯入 proper nouns
+              已取得專有名詞
             </span>
             <button
               v-if="canFinalizeProperNounImport"
@@ -559,7 +593,7 @@ onUnmounted(() => {
               :disabled="finalizingImport"
               @click="finalizeImport"
             >
-              {{ finalizingImport ? '匯入中...' : '匯入專有名詞' }}
+              {{ finalizingImport ? '取得中...' : '取得詞彙並開始轉錄' }}
             </button>
             <button
               type="button"

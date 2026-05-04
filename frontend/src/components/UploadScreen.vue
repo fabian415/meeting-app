@@ -1,8 +1,8 @@
 <script setup>
-import { ref, onMounted } from 'vue'
-import { useMeetingStore } from '../stores/meeting.js'
+import { onMounted, ref } from 'vue'
 import { uploadMeeting } from '../api/index.js'
 import { canUseRecordingDraftStore, clearRecordingDraft, getRecordingDraft } from '../services/recordingDraftStore.js'
+import { useMeetingStore } from '../stores/meeting.js'
 
 const emit = defineEmits(['toast'])
 const store = useMeetingStore()
@@ -43,24 +43,19 @@ async function doUpload() {
     status.value = 'success'
     uploadedFiles.value = result.files || []
     store.uploadResult = result
+    store.setSelectedTerms([])
+
     if (canUseRecordingDraftStore()) {
       await clearRecordingDraft().catch(() => {})
     }
 
-    store.startConversation({
-      sessionId: result.conversationContext?.sessionId || null,
-      context: result.conversationContext || null,
-      initialMessages: [],
-      draft: result.suggestedPrompt || '',
-    })
-
-    emit('toast', { type: 'success', message: '檔案已成功上傳，請確認訊息後再送出給 OpenClaw。' })
+    store.currentView = 'terms-choice'
+    emit('toast', { type: 'success', message: '音檔已上傳完成，請選擇是否加入專有名詞' })
   } catch (err) {
     clearInterval(progressInterval)
     progress.value = 0
     status.value = 'error'
     errorMessage.value = err.response?.data?.message || err.message || '上傳失敗，請稍後再試'
-
     emit('toast', { type: 'error', message: errorMessage.value })
   }
 }
@@ -127,7 +122,7 @@ function formatBytes(bytes) {
         <div class="fade-in flex h-full flex-col items-center justify-center gap-6 lg:grid lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)] lg:gap-8">
           <div class="relative h-28 w-28 lg:h-36 lg:w-36">
             <div class="h-28 w-28 rounded-full border-4 border-white/10 lg:h-36 lg:w-36"></div>
-            <div class="absolute inset-0 rounded-full border-4 border-transparent border-t-blue-500 animate-spin-slow"></div>
+            <div class="absolute inset-0 animate-spin rounded-full border-4 border-transparent border-t-blue-500"></div>
             <div class="absolute inset-0 flex items-center justify-center">
               <span class="text-4xl">↑</span>
             </div>
@@ -136,16 +131,16 @@ function formatBytes(bytes) {
           <div class="w-full max-w-3xl space-y-4">
             <div class="glass-card p-4 lg:p-5">
               <div class="mb-2 flex justify-between text-sm">
-                <span class="text-slate-300">正在上傳並建立 OpenClaw 對話內容...</span>
+                <span class="text-slate-300">正在上傳錄音檔與會議資訊...</span>
                 <span class="font-mono text-blue-400">{{ Math.round(progress) }}%</span>
               </div>
               <div class="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
-                <div class="h-full rounded-full transition-all duration-300" style="background: linear-gradient(90deg, #3b82f6, #6366f1)" :style="{ width: progress + '%' }"></div>
+                <div class="h-full rounded-full bg-blue-500 transition-all duration-300" :style="{ width: progress + '%' }"></div>
               </div>
             </div>
 
             <div class="glass-card p-4 lg:p-5">
-              <p class="text-sm font-medium text-white">目前檔案</p>
+              <p class="text-sm font-medium text-white">上傳檔案</p>
               <p class="mt-2 text-sm text-slate-300">{{ store.audioFileName || formatBytes(store.audioBlob?.size) }}</p>
             </div>
           </div>
@@ -160,11 +155,11 @@ function formatBytes(bytes) {
 
           <div class="text-center">
             <h2 class="text-xl font-bold text-white">上傳完成</h2>
-            <p class="mt-1 text-sm text-slate-400">系統已建立好 OpenClaw 對話草稿。</p>
+            <p class="mt-1 text-sm text-slate-400">下一步會詢問是否加入專有名詞。</p>
           </div>
 
           <div class="glass-card flex w-full flex-col gap-3 p-4 lg:p-5">
-            <p class="mb-1 text-sm font-medium text-slate-300">已處理檔案</p>
+            <p class="mb-1 text-sm font-medium text-slate-300">已上傳檔案</p>
             <div v-for="file in uploadedFiles" :key="file.name" class="flex items-center gap-3 border-t border-white/5 py-2">
               <span class="text-lg text-emerald-400">✓</span>
               <div class="min-w-0">
@@ -186,7 +181,7 @@ function formatBytes(bytes) {
 
           <div class="text-center">
             <h2 class="text-xl font-bold text-white">上傳失敗</h2>
-            <p class="mt-1 text-sm text-slate-400">請確認檔案與服務狀態後再重試。</p>
+            <p class="mt-1 text-sm text-slate-400">請檢查網路或伺服器狀態後重試。</p>
           </div>
 
           <div class="glass-card w-full border-red-500/30 p-4">

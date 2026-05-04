@@ -104,40 +104,6 @@ export async function deleteSpeaker(name) {
   return res.data
 }
 
-export async function listProperNouns() {
-  const res = await whisperApi.get('/proper-nouns')
-  return res.data
-}
-
-export async function addProperNoun(term) {
-  const res = await whisperApi.post('/proper-nouns', { term })
-  return res.data
-}
-
-export async function updateProperNoun(term, newTerm) {
-  const res = await whisperApi.put(`/proper-nouns/${encodeURIComponent(term)}`, { new_term: newTerm })
-  return res.data
-}
-
-export async function deleteProperNoun(term) {
-  const res = await whisperApi.delete(`/proper-nouns/${encodeURIComponent(term)}`)
-  return res.data
-}
-
-export async function deleteAllProperNouns() {
-  const current = await listProperNouns()
-  const terms = current.terms || []
-
-  for (const term of terms) {
-    await deleteProperNoun(term)
-  }
-
-  return {
-    total: 0,
-    terms: [],
-  }
-}
-
 export async function importProperNounsFromFile(file) {
   const form = new FormData()
   form.append('sourceFile', file, file.name)
@@ -150,10 +116,15 @@ export async function importProperNounsFromFile(file) {
   return res.data
 }
 
-export async function finalizeProperNounImport(outputRemotePath) {
+export async function finalizeTermExtraction(outputRemotePath) {
   const res = await api.post('/glossary/finalize-import', {
     outputRemotePath,
   })
 
+  return res.data
+}
+
+export async function getTranscribeTermsLimit() {
+  const res = await whisperApi.get('/transcribe/terms-limit')
   return res.data
 }
